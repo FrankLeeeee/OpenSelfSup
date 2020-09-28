@@ -10,7 +10,7 @@ from .utils import Sobel
 
 
 @MODELS.register_module
-class ConODC(nn.Module):
+class ContrastiveODC(nn.Module):
     """Contrastive Learning with ODC.
 
     Args:
@@ -31,7 +31,7 @@ class ConODC(nn.Module):
                  memory_bank=None,
                  pretrained=None,
                  sample_size=50):
-        super(ODC, self).__init__()
+        super(ContrastiveODC, self).__init__()
         self.with_sobel = with_sobel
         if with_sobel:
             self.sobel_layer = Sobel()
