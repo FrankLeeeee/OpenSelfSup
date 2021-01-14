@@ -1,10 +1,9 @@
 import numpy as np
-from sklearn.cluster import KMeans
-
 import torch
-import torch.nn as nn
 import torch.distributed as dist
+import torch.nn as nn
 from mmcv.runner import get_dist_info
+from sklearn.cluster import KMeans
 
 from ..registry import MEMORIES
 
@@ -38,6 +37,7 @@ class ODCMemory(nn.Module):
         self.num_classes = num_classes
         self.min_cluster = min_cluster
         self.debug = kwargs.get('debug', False)
+        self.length = length
 
     def init_memory(self, feature, label):
         """Initialize memory modules."""
@@ -51,6 +51,9 @@ class ODCMemory(nn.Module):
             centroids = self._compute_centroids()
             self.centroids.copy_(centroids)
         dist.broadcast(self.centroids, 0)
+
+        # add to avoid small clusters
+        self.deal_with_small_clusters()
 
     def _compute_centroids_ind(self, cinds):
         """Compute a few centroids."""
@@ -121,7 +124,7 @@ class ODCMemory(nn.Module):
         newlabel = similarity_to_centroids.argmax(dim=0)  # cuda tensor
         newlabel_cpu = newlabel.cpu()
         change_ratio = (newlabel_cpu !=
-            self.label_bank[ind]).sum().float().cuda() \
+                        self.label_bank[ind]).sum().float().cuda() \
             / float(newlabel_cpu.shape[0])
         self.label_bank[ind] = newlabel_cpu.clone()  # copy to cpu
         return change_ratio
@@ -158,6 +161,13 @@ class ODCMemory(nn.Module):
                 self.label_bank[ind] = torch.from_numpy(target.cpu().numpy())
         # deal with empty cluster
         self._redirect_empty_clusters(small_clusters)
+
+        # print dist after dealing with small clusters
+        hist = np.bincount(self.label_bank.numpy(), minlength=self.num_classes)
+        small_clusters = np.where(hist < self.min_cluster)[0].tolist()
+        if self.rank == 0:
+            print("mincluster: {}, num of small class: {}".format(
+                hist.min(), len(small_clusters)))
 
     def update_centroids_memory(self, cinds=None):
         """Update centroids memory."""

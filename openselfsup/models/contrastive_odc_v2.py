@@ -11,7 +11,7 @@ from .utils import Sobel
 
 
 @MODELS.register_module
-class ContrastiveODC(nn.Module):
+class ContrastiveODC_V2(nn.Module):
     """Contrastive Learning with ODC.
 
     Args:
@@ -32,7 +32,7 @@ class ContrastiveODC(nn.Module):
                  memory_bank=None,
                  pretrained=None,
                  sample_size=50):
-        super(ContrastiveODC, self).__init__()
+        super(ContrastiveODC_V2, self).__init__()
         self.with_sobel = with_sobel
         if with_sobel:
             self.sobel_layer = Sobel()
@@ -103,20 +103,23 @@ class ContrastiveODC(nn.Module):
         x = self.forward_backbone(img)  # 2n
         feature = self.neck(x)  # (2n) * d
 
-        # print(feature[0][0])
-        # for i in range(feature[0].size(0)):
-        #     if sum(torch.isnan(feature[0][i])):
-        #         raise Exception("feature has nan error: {}".format(i))
+        for i in range(feature[0].size(0)):
+            if sum(torch.isnan(feature[0][i])):
+                print("img: {}".format(img))
+                print("x: {}".format(x))
+                print("feature: {}".format(feature))
+                raise Exception("feature has nan error: {}".format(i))
 
         # average the outs to feed into memory bank
         feature_pairs = torch.split(
             feature[0], split_size_or_sections=2, dim=0)
-        mean_feature = [pair.mean(dim=0, keepdim=True)
-                        for pair in feature_pairs]
-        mean_feature = torch.cat(mean_feature, dim=0)
+
+        feature = [pair[0]
+                   for pair in feature_pairs]
+        feature = torch.stack(feature, dim=0)
 
         # projection head
-        outs = self.head([mean_feature])  # (2n) * k
+        outs = self.head([feature])  # (2n) * k
 
         # get items for loss
         if self.memory_bank.label_bank.is_cuda:
@@ -124,60 +127,16 @@ class ContrastiveODC(nn.Module):
         else:
             cls_labels = self.memory_bank.label_bank[idx.cpu()].cuda()
 
-        # get old features
-        old_features_list = torch.zeros(
-            (len(idx) * self.world_size, self.memory_bank.feat_dim), dtype=torch.float32).cuda()
-
-        id_list = [idx] * self.world_size
-        torch.distributed.all_gather(id_list, idx)
-        if self.rank == 0:
-            old_features_list = [
-                self.memory_bank.feature_bank[idx_rank] for idx_rank in id_list]
-            old_features_list = torch.cat(old_features_list, dim=0).cuda()
-
-        torch.distributed.broadcast(
-            old_features_list, src=0)
-        old_features = old_features_list[len(
-            idx) * self.rank: len(idx) * (self.rank+1)]
-
-        new_features_centroids = self.memory_bank.centroids[cls_labels]
-
-        # get random features and centroids
-        random_features_list = torch.zeros(
-            (self.sample_size * self.world_size, self.memory_bank.feat_dim),
-            dtype=torch.float32).cuda()
-
-        random_indices = random.sample(
-            range(self.memory_bank.length), self.sample_size)
-        random_indices = torch.LongTensor(random_indices).cuda()
-
-        random_indices_list = [random_indices] * self.world_size
-        torch.distributed.all_gather(random_indices_list, random_indices)
-
-        if self.rank == 0:
-            random_features_list = [
-                self.memory_bank.feature_bank[indices] for indices in random_indices_list]
-            random_features_list = torch.cat(
-                random_features_list, dim=0).cuda()
-
-        torch.distributed.broadcast(
-            random_features_list, src=0)
-        random_features = random_features_list[self.sample_size *
-                                               self.rank: self.sample_size * (self.rank+1)]
-        random_features_labels = self.memory_bank.label_bank[random_indices]
-        random_features_labels = random_features_labels.cuda()
-        random_centroids = self.memory_bank.centroids[random_features_labels]
+        # get centroids for the labels
+        centroids = self.memory_bank.centroids[cls_labels]
 
         # loss input
         loss_inputs = dict()
-        loss_inputs['new_features_pairs'] = feature_pairs
-        loss_inputs['new_features_mean'] = mean_feature
-        loss_inputs['old_features'] = old_features
-        loss_inputs['new_prjections'] = outs
+        loss_inputs['feature_pairs'] = feature_pairs
+        loss_inputs['feature'] = feature
+        loss_inputs['cls_scores'] = outs
         loss_inputs['cls_labels'] = cls_labels
-        loss_inputs['new_features_centroids'] = new_features_centroids
-        loss_inputs['random_features'] = random_features
-        loss_inputs['random_centroids'] = random_centroids
+        loss_inputs['centroids'] = centroids
 
         # loss calculation
         losses = self.head.loss(**loss_inputs)
@@ -185,7 +144,7 @@ class ContrastiveODC(nn.Module):
 
         # update samples memory
         change_ratio = self.memory_bank.update_samples_memory(
-            idx, mean_feature.detach())
+            idx, feature.detach())
         losses['change_ratio'] = change_ratio
 
         return losses
@@ -199,8 +158,7 @@ class ContrastiveODC(nn.Module):
 
     def forward(self, img, mode='train', **kwargs):
         if mode == 'train':
-            with torch.autograd.set_detect_anomaly(True):
-                return self.forward_train(img, **kwargs)
+            return self.forward_train(img, **kwargs)
         elif mode == 'test':
             return self.forward_test(img, **kwargs)
         elif mode == 'extract':

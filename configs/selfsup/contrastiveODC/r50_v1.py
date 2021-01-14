@@ -1,10 +1,10 @@
 _base_ = '../../base.py'
 # model settings
 # num_classes = 10000
-num_classes = 100
+num_classes = 1000
 
 model = dict(
-    type='ODC',
+    type='ContrastiveODC',
     pretrained=None,
     with_sobel=False,
     backbone=dict(
@@ -12,7 +12,8 @@ model = dict(
         depth=50,
         in_channels=3,
         out_indices=[4],  # 0: conv-1, x: stage-x
-        norm_cfg=dict(type='SyncBN')),
+        norm_cfg=dict(type='SyncBN'),
+        with_cp=True),
     neck=dict(
         type='NonLinearNeckV0',
         in_channels=2048,
@@ -20,13 +21,15 @@ model = dict(
         out_channels=256,
         with_avg_pool=True),
     head=dict(
-        type='ClsHead',
+        type='ContrastiveODCHead',
+        alpha=0.2,
+        beta=1,
         with_avg_pool=False,
         in_channels=256,
         num_classes=num_classes),
     memory_bank=dict(
         type='ODCMemory',
-        length=63916,
+        length=120000,
         feat_dim=256,
         momentum=0.5,
         num_classes=num_classes,
@@ -37,9 +40,9 @@ data_source_cfg = dict(
     type='ImageNet',
     memcached=True,
     mclient_path='/mnt/lustre/share/memcached_client')
-data_train_list = 'data/imagenet/meta/subdataset/train_labeled_50percent_10interval_no_label.txt'
+data_train_list = 'data/imagenet/meta/train_12w.txt'
 data_train_root = 'data/imagenet/train'
-dataset_type = 'DeepClusterDataset'
+dataset_type = 'ContrastiveODCDataset'
 img_norm_cfg = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 train_pipeline = [
     dict(type='RandomResizedCrop', size=224),
@@ -80,6 +83,7 @@ custom_hooks = [
             workers_per_gpu=5,
             dataset=dict(
                 type=dataset_type,
+                for_extractor=True,
                 data_source=dict(
                     list_file=data_train_list,
                     root=data_train_root,
@@ -102,11 +106,11 @@ custom_hooks = [
 ]
 # optimizer
 optimizer = dict(
-    type='SGD', lr=0.015, momentum=0.9, weight_decay=0.00001,
+    type='SGD', lr=0.06, momentum=0.9, weight_decay=0.00001,
     nesterov=False,
     paramwise_options={'\Ahead.': dict(momentum=0.)})
 # learning policy
 lr_config = dict(policy='step', step=[400], gamma=0.4)
 checkpoint_config = dict(interval=10)
 # runtime settings
-total_epochs = 400
+total_epochs = 200

@@ -1,17 +1,18 @@
 import torch
 from PIL import Image
-from .registry import DATASETS
+
 from .base import BaseDataset
+from .registry import DATASETS
 
 
 @DATASETS.register_module
-class ContrastiveODCDataset(BaseDataset):
+class ContrastiveODCDatasetV2(BaseDataset):
     """Dataset for contrastive learning methods that forward
         two views of the image at a time (MoCo, SimCLR).
     """
 
     def __init__(self, data_source, pipeline, for_extractor=False):
-        super(ContrastiveODCDataset, self).__init__(data_source, pipeline)
+        super(ContrastiveODCDatasetV2, self).__init__(data_source, pipeline)
         # init clustering labels
         self.labels = [-1 for _ in range(self.data_source.get_length())]
         self.for_extractor = for_extractor

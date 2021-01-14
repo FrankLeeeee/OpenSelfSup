@@ -1,7 +1,7 @@
 _base_ = '../../base.py'
 # model settings
 # num_classes = 10000
-num_classes = 100
+num_classes = 20
 
 model = dict(
     type='ODC',
@@ -26,7 +26,7 @@ model = dict(
         num_classes=num_classes),
     memory_bank=dict(
         type='ODCMemory',
-        length=63916,
+        length=5052,
         feat_dim=256,
         momentum=0.5,
         num_classes=num_classes,
@@ -37,7 +37,7 @@ data_source_cfg = dict(
     type='ImageNet',
     memcached=True,
     mclient_path='/mnt/lustre/share/memcached_client')
-data_train_list = 'data/imagenet/meta/subdataset/train_labeled_50percent_10interval_no_label.txt'
+data_train_list = 'data/imagenet/meta/subdataset/train_labeled_20percent_50interval_no_label.txt'
 data_train_root = 'data/imagenet/train'
 dataset_type = 'DeepClusterDataset'
 img_norm_cfg = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -110,3 +110,11 @@ lr_config = dict(policy='step', step=[400], gamma=0.4)
 checkpoint_config = dict(interval=10)
 # runtime settings
 total_epochs = 400
+
+# log hook
+log_config = dict(
+    interval=10,
+    hooks=[
+        dict(type='TextLoggerHook'),
+        dict(type='TensorboardLoggerHook')
+    ])

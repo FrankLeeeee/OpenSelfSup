@@ -8,7 +8,7 @@ from ..registry import HEADS
 
 
 @HEADS.register_module
-class ContrastiveODCHead(nn.Module):
+class ContrastiveODCHead_V2(nn.Module):
     """Head for contrastive learning.
 
     Args:
@@ -24,7 +24,7 @@ class ContrastiveODCHead(nn.Module):
                  in_channels=2048,
                  num_classes=1000,
                  temperature=0.1):
-        super(ContrastiveODCHead, self).__init__()
+        super(ContrastiveODCHead_V2, self).__init__()
         self.alpha = alpha
         self.beta = beta
         self.with_avg_pool = with_avg_pool
@@ -32,7 +32,12 @@ class ContrastiveODCHead(nn.Module):
         self.num_classes = num_classes
 
         self.temperature = temperature
+
+        # for classification
         self.criterion = nn.CrossEntropyLoss()
+
+        # for contrastive loss
+        self.contrastive_criterion = nn.CrossEntropyLoss()
 
         if self.with_avg_pool:
             self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
@@ -72,9 +77,16 @@ class ContrastiveODCHead(nn.Module):
         return cls_loss, acc
 
     def calc_feature_sim(self, feature_pairs):
-        feature_sim = sum([torch.sqrt(torch.matmul(f[0], f[1]))
-                           for f in feature_pairs]) / len(feature_pairs)
-        return -feature_sim
+        sim_pairs = [torch.matmul(f[0], f[1])
+                     for f in feature_pairs]
+        feature_sim = torch.stack(sim_pairs, dim=0)
+        feature_sim = torch.unsqueeze(feature_sim, 1)
+
+        # feature_sim = sum(sim_pairs) / len(sim_pairs)
+        # feature_sim = torch.exp(feature_sim / self.temperature)
+        # return feature_sim
+
+        return feature_sim
 
     def _masked_softmax(self, vec, mask, dim=1, epsilon=1e-5):
         exps = torch.exp(vec)
@@ -82,77 +94,55 @@ class ContrastiveODCHead(nn.Module):
         masked_sums = masked_exps.sum(dim, keepdim=True) + epsilon
         return (masked_exps/masked_sums)
 
-    def calc_rel_cts_loss(self,
-                          new_features,
-                          old_features,
-                          new_features_centroids,
-                          random_features,
-                          random_centroids):
+    def calc_rel_dissim(self,
+                        feature,
+                        centroids):
         """Calculate relative contrastive loss
 
         Args:
-            new_features (Tensor): Input features of shape (N, D).
-            old_features (Tensor): the previous feature sample in 
-                the memory with the same index of each feature (N, D).
-            new_features_centroids: the centroids for the new features (N, D)
-            random_features: some random features from different centroids (M, D)
-            random_centroids: centroids of the random_features (M, D)
+            feature (Tensor): Input features of shape (N, D).
+            centroids: centroids of the random_features (M, D)
 
         Returns:
             Tensor : relative contrastive loss
         """
         # calculate euclidean distant between centroids
-        cdist = torch.cdist(new_features_centroids,
-                            random_centroids, p=2)  # N * N
-        softmax_cdist = self._masked_softmax(cdist, cdist > 0, dim=1)
+        N = feature.size(0)
+        mask = 1 - torch.eye(N, dtype=torch.uint8).cuda()
+
+        cdist = torch.cdist(centroids,
+                            centroids, p=2)  # N * N
         feature_sim = torch.matmul(
-            new_features, random_features.permute(1, 0))  # N * N
+            feature, feature.permute(1, 0))
+
+        feature_sim = torch.masked_select(
+            feature_sim, mask == 1).reshape(N, -1)
+        cdist = torch.masked_select(
+            cdist, mask == 1).reshape(N, -1)
+
+        # softmax_cdist = self._masked_softmax(cdist, cdist > 0, dim=1)
 
         # sum of dissimilarity across different clusters with distance-based weights
-        feature_dissim = (softmax_cdist * feature_sim).sum() / \
-            new_features.size(0)
 
-        # sum of dissimilarity between images of the same cluster
-        # within_cluster = softmax_cdist.apply_(lambda x: 0 if x > 0 else 1)
-        within_cluster = torch.where(softmax_cdist == 0, torch.Tensor(
-            [1]).cuda(), torch.Tensor([0]).cuda())
-        within_cluster_dissim = (
-            within_cluster * feature_sim).sum() / new_features.size(0)
+        # normalize distance to 1 - 10
+        cdist = (1 - 0.1) * (cdist - cdist.min()) / \
+            (cdist.max() - cdist.min()) + 0.1
 
-        # calculate similarity between new and old features
-        new_old_feature_sim = torch.matmul(
-            new_features, old_features.permute(1, 0))
-        new_old_feature_sim = torch.diagonal(
-            new_old_feature_sim, 0).sum() / new_old_feature_sim.size(0)
+        # print("cdist: {}".format(cdist))
+        # print("feature_sim: {}".format(feature_sim))
 
-        # final relative contrastive loss
-        # numerator = torch.exp(new_old_feature_sim)
-        # denominator = self.alpha * \
-        #     torch.exp(within_cluster_dissim) + \
-        #     self.beta * torch.exp(feature_dissim)
+        rel_dissim = feature_sim / cdist
 
-        # rel_cts_loss = -torch.log(numerator/denominator)
-
-        rel_cts_loss = -torch.log(new_old_feature_sim /
-                                  (self.alpha * within_cluster_dissim + self.beta * feature_dissim))
-
-        # print(dict(
-        #     new_old_feature_sim=new_old_feature_sim,
-        #     within_cluster_dissim=within_cluster_dissim,
-        #     feature_dissim=feature_dissim,
-        # ))
-
-        return rel_cts_loss
+        # print("rel_dissim: {}".format(rel_dissim))
+        return rel_dissim
 
     def loss(self,
-             new_features_pairs,
-             new_features_mean,
-             old_features,
-             new_prjections,
+             feature_pairs,
+             feature,
+             cls_scores,
              cls_labels,
-             new_features_centroids,
-             random_features,
-             random_centroids):
+             centroids,
+             ):
         """Forward head.
 
         Args:
@@ -168,14 +158,26 @@ class ContrastiveODCHead(nn.Module):
         Returns:
             dict[str, Tensor]: A dictionary of loss components.
         """
-        cls_loss, acc = self.calc_cls_loss(new_prjections, cls_labels)
-        feature_sim = self.calc_feature_sim(new_features_pairs)
-        rel_ctc_loss = self.calc_rel_cts_loss(
-            new_features_mean, old_features, new_features_centroids, random_features, random_centroids)
+        cls_loss, acc = self.calc_cls_loss(cls_scores, cls_labels)
+        feature_sim = self.calc_feature_sim(feature_pairs)
+        rel_dissim = self.calc_rel_dissim(feature, centroids)
+        N = feature.size(0)
 
+        # print("feature_sim shape: {}".format(feature_sim.shape))
+        # print("rel_dissim shape: {}".format(rel_dissim.shape))
+        logits = torch.cat((feature_sim, rel_dissim), dim=1)
+        # print("logits: {}".format(logits))
+
+        # logits /= self.temperature
+        labels = torch.zeros((N, ), dtype=torch.long).cuda()
+        rel_ctc_loss = self.contrastive_criterion(logits, labels)
         losses = dict()
-        losses['cls_loss'] = 0.1 * cls_loss
-        losses['feature_sim_loss'] = 0.1 * feature_sim
+        losses['cls_loss'] = cls_loss
+        # losses['feature_sim_loss'] = feature_sim
+        # losses['rel_dissim'] = rel_dissim
         losses['rel_ctc_loss'] = rel_ctc_loss
-        losses['loss'] = 0.1 * cls_loss + 0.1 * feature_sim + rel_ctc_loss
+        losses['acc'] = acc
+        # losses['loss'] = cls_loss + rel_ctc_loss
+        losses['loss'] = cls_loss + rel_ctc_loss
+        # print(losses)
         return losses

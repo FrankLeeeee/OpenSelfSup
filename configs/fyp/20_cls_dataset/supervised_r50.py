@@ -10,16 +10,16 @@ model = dict(
         norm_cfg=dict(type='SyncBN')),
     head=dict(
         type='ClsHead', with_avg_pool=True, in_channels=2048,
-        num_classes=100))
+        num_classes=20))
 # num_classes=1000))
 # dataset settings
 data_source_cfg = dict(
     type='ImageNet',
     memcached=True,
     mclient_path='/mnt/lustre/share/memcached_client')
-data_train_list = 'data/imagenet/meta/subdataset/train_labeled_50percent_10interval.txt'
+data_train_list = 'data/imagenet/meta/subdataset/train_labeled_20percent_50interval.txt'
 data_train_root = 'data/imagenet/train'
-data_test_list = 'data/imagenet/meta/subdataset/val_labeled_50percent_10interval.txt'
+data_test_list = 'data/imagenet/meta/subdataset/val_labeled_20percent_50interval.txt'
 data_test_root = 'data/imagenet/val'
 dataset_type = 'ClassificationDataset'
 img_norm_cfg = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -60,6 +60,15 @@ custom_hooks = [
         workers_per_gpu=2,
         eval_param=dict(topk=(1, 5)))
 ]
+
+# log hook
+log_config = dict(
+    interval=10,
+    hooks=[
+        dict(type='TextLoggerHook'),
+        dict(type='TensorboardLoggerHook')
+    ])
+
 # optimizer
 optimizer = dict(type='SGD', lr=0.05, momentum=0.9, weight_decay=0.0001)
 # learning policy

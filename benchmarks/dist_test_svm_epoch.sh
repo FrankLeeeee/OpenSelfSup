@@ -25,4 +25,4 @@ bash tools/dist_extract.sh $CFG $GPUS $WORK_DIR --checkpoint $WORK_DIR/epoch_${E
 
 bash benchmarks/svm_tools/eval_svm_full.sh $WORK_DIR "$FEAT_LIST"
 
-bash benchmarks/svm_tools/eval_svm_lowshot.sh $WORK_DIR "$FEAT_LIST"
+# bash benchmarks/svm_tools/eval_svm_lowshot.sh $WORK_DIR "$FEAT_LIST"

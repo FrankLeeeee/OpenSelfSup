@@ -10,7 +10,7 @@ model = dict(
         out_indices=[4],  # 0: conv-1, x: stage-x
         norm_cfg=dict(type='SyncBN')),
     neck=dict(
-        type='NonLinearNeckSimCLR', # SimCLR non-linear neck
+        type='NonLinearNeckSimCLR',  # SimCLR non-linear neck
         in_channels=2048,
         hid_channels=2048,
         out_channels=128,
@@ -23,7 +23,7 @@ data_source_cfg = dict(
     memcached=True,
     mclient_path='/mnt/lustre/share/memcached_client')
 # data_train_list = 'data/imagenet/meta/train.txt'
-data_train_list = 'data/imagenet/meta/subdataset/train_labeled_50percent_10interval_no_label.txt'
+data_train_list = 'data/imagenet/meta/subdataset/train_labeled_20percent_50interval_no_label.txt'
 data_train_root = 'data/imagenet/train'
 dataset_type = 'ContrastiveDataset'
 img_norm_cfg = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -67,8 +67,8 @@ data = dict(
 # optimizer
 optimizer = dict(type='LARS', lr=0.1, weight_decay=0.000001, momentum=0.9,
                  paramwise_options={
-                    '(bn|gn)(\d+)?.(weight|bias)': dict(weight_decay=0., lars_exclude=True),
-                    'bias': dict(weight_decay=0., lars_exclude=True)})
+                     '(bn|gn)(\d+)?.(weight|bias)': dict(weight_decay=0., lars_exclude=True),
+                     'bias': dict(weight_decay=0., lars_exclude=True)})
 # learning policy
 lr_config = dict(
     policy='CosineAnnealing',
@@ -80,3 +80,11 @@ lr_config = dict(
 checkpoint_config = dict(interval=10)
 # runtime settings
 total_epochs = 200
+
+# log hook
+log_config = dict(
+    interval=10,
+    hooks=[
+        dict(type='TextLoggerHook'),
+        dict(type='TensorboardLoggerHook')
+    ])

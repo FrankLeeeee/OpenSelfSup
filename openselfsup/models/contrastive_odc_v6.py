@@ -1,17 +1,42 @@
+import functools
+import math
+import multiprocessing
+import random
+import time
+
 import numpy as np
 import torch
 import torch.nn as nn
-import random
-
-from openselfsup.utils import print_log
 from mmcv.runner import get_dist_info
+from openselfsup.utils import print_log
+
 from . import builder
 from .registry import MODELS
-from .utils import Sobel
+from .utils import GatherLayer, Sobel
 
 
-@MODELS.register_module
-class ContrastiveODC(nn.Module):
+def get_features(num, output, close_centroids, length, label_bank, feature_bank, feat_dim, i):
+    index_list = [(label_bank == centroid).nonzero()
+                  for centroid in close_centroids[i]]
+
+    count = 0
+    for i in range(len(index_list)):
+        count += index_list[i].size(0)
+
+        if count > num or i == len(index_list) - 1:
+            index = torch.cat(index_list[:i+1], dim=0).squeeze(1)
+
+    # if index.size(0) < num:
+    #     times = math.ceil(num / index.size(0))
+    #     index = index.repeat(times)
+
+    rdm_choices = random.sample(range(index.size(0)), num)
+    index_keep = index[rdm_choices].tolist()
+    output[i] = feature_bank[index_keep]
+
+
+@ MODELS.register_module
+class ContrastiveODC_V6(nn.Module):
     """Contrastive Learning with ODC.
 
     Args:
@@ -31,8 +56,10 @@ class ContrastiveODC(nn.Module):
                  head=None,
                  memory_bank=None,
                  pretrained=None,
-                 sample_size=50):
-        super(ContrastiveODC, self).__init__()
+                 train=True,
+                 train_bs=32,
+                 neg_num=32):
+        super(ContrastiveODC_V6, self).__init__()
         self.with_sobel = with_sobel
         if with_sobel:
             self.sobel_layer = Sobel()
@@ -43,7 +70,11 @@ class ContrastiveODC(nn.Module):
         if memory_bank is not None:
             self.memory_bank = builder.build_memory(memory_bank)
         self.init_weights(pretrained=pretrained)
-        self.sample_size = sample_size
+        self.neg_num = neg_num
+
+        if train:
+            self.pool = multiprocessing.Pool(train_bs)
+            # self.pool2 = multiprocessing.Pool(self.wor)
 
         # set reweight tensors
         self.num_classes = head.num_classes
@@ -81,6 +112,87 @@ class ContrastiveODC(nn.Module):
         x = self.backbone(img)
         return x
 
+    @ staticmethod
+    def _create_buffer(N):
+        mask = 1 - torch.eye(N * 2, dtype=torch.uint8).cuda()
+        pos_ind = (torch.arange(N * 2).cuda(),
+                   2 * torch.arange(N, dtype=torch.long).unsqueeze(1).repeat(
+                       1, 2).view(-1, 1).squeeze().cuda())
+        neg_mask = torch.ones((N * 2, N * 2 - 1), dtype=torch.uint8).cuda()
+        neg_mask[pos_ind] = 0
+        return mask, pos_ind, neg_mask
+
+    def get_close_cluster(self, num=2):
+        centroids = self.memory_bank.centroids
+        dis = torch.cdist(centroids, centroids, p=2)
+        val, idx = dis.sort()
+        close_cluster = idx[:, 1:num+1].cpu()
+
+        return close_cluster
+
+    def get_close_features(self, labels, close_clusters, num=32):
+        N = labels.size(0)
+        close_centroids = close_clusters[labels]
+        output = torch.zeros((labels.size(0), num, self.memory_bank.feat_dim))
+        fn = functools.partial(get_features, num, output, close_centroids, self.memory_bank.length,
+                               self.memory_bank.label_bank, self.memory_bank.feature_bank, self.memory_bank.feat_dim)
+
+        self.pool.map(fn, range(N))
+        return output
+
+    def get_negative(self, features, labels, cluster_num=2, neg_num=16):
+        N = features.size(0)
+
+        # count label communication time
+        torch.cuda.synchronize()
+        start = time.time()
+
+        label_list = [torch.zeros_like(labels) for i in range(self.world_size)]
+        torch.distributed.all_gather(label_list, labels)
+        labels = torch.cat(label_list, dim=0)
+
+        # torch.cuda.synchronize()
+        # all_gather_comm_end = time.time()
+        # print('label all gather: {}'.format(all_gather_comm_end - start))
+
+        # get features from feature banks
+        # feature bank is only available on rank 0
+        # randomly select neg_count feature samples from
+        # 10% of the nearest features
+        feature_collection = torch.zeros(
+            (self.world_size * features.size(0), neg_num, features.size(1))).cuda()
+
+        if self.rank == 0:
+            # count get close cluster time
+            # torch.cuda.synchronize()
+            # get_cluster_start = time.time()
+            close_clusters = self.get_close_cluster(cluster_num)
+
+            # torch.cuda.synchronize()
+            # get_cluster_end = time.time()
+            # print('get close cluster: {}'.format(
+            #     get_cluster_end - get_cluster_start))
+
+            feature_collection = self.get_close_features(
+                labels, close_clusters, neg_num).cuda()
+            # torch.cuda.synchronize()
+            # get_features_end = time.time()
+            # print('get close features: {}'.format(
+            #     get_features_end - get_cluster_end))
+
+        # count broadcast
+        # torch.cuda.synchronize()
+        # broadcast_comm_start = time.time()
+        torch.distributed.broadcast(feature_collection, src=0)
+        negative = feature_collection[self.rank *
+                                      features.size(0): (self.rank+1) * features.size(0)]
+        # torch.cuda.synchronize()
+        # broadcast_comm_end = time.time()
+        # print('broadcast time: {}'.format(
+        #     broadcast_comm_end - broadcast_comm_start))
+
+        return negative
+
     def forward_train(self, img, idx, **kwargs):
         """Forward computation during training.
 
@@ -93,30 +205,9 @@ class ContrastiveODC(nn.Module):
         Returns:
             dict[str, Tensor]: A dictionary of loss components.
         """
-        # forward & backward
-        assert img.dim() == 5, \
-            "Input must have 5 dims, got: {}".format(img.dim())
-
-        img = img.reshape(
-            img.size(0) * 2, img.size(2), img.size(3), img.size(4))  # 2n
-
-        x = self.forward_backbone(img)  # 2n
-        feature = self.neck(x)  # (2n) * d
-
-        # print(feature[0][0])
-        # for i in range(feature[0].size(0)):
-        #     if sum(torch.isnan(feature[0][i])):
-        #         raise Exception("feature has nan error: {}".format(i))
-
-        # average the outs to feed into memory bank
-        feature_pairs = torch.split(
-            feature[0], split_size_or_sections=2, dim=0)
-        mean_feature = [pair.mean(dim=0, keepdim=True)
-                        for pair in feature_pairs]
-        mean_feature = torch.cat(mean_feature, dim=0)
-
-        # projection head
-        outs = self.head([mean_feature])  # (2n) * k
+        x = self.forward_backbone(img)
+        feature = self.neck(x)
+        outs = self.head(feature)
 
         # get items for loss
         if self.memory_bank.label_bank.is_cuda:
@@ -124,68 +215,24 @@ class ContrastiveODC(nn.Module):
         else:
             cls_labels = self.memory_bank.label_bank[idx.cpu()].cuda()
 
-        # get old features
-        old_features_list = torch.zeros(
-            (len(idx) * self.world_size, self.memory_bank.feat_dim), dtype=torch.float32).cuda()
-
-        id_list = [idx] * self.world_size
-        torch.distributed.all_gather(id_list, idx)
-        if self.rank == 0:
-            old_features_list = [
-                self.memory_bank.feature_bank[idx_rank] for idx_rank in id_list]
-            old_features_list = torch.cat(old_features_list, dim=0).cuda()
-
-        torch.distributed.broadcast(
-            old_features_list, src=0)
-        old_features = old_features_list[len(
-            idx) * self.rank: len(idx) * (self.rank+1)]
-
-        new_features_centroids = self.memory_bank.centroids[cls_labels]
-
-        # get random features and centroids
-        random_features_list = torch.zeros(
-            (self.sample_size * self.world_size, self.memory_bank.feat_dim),
-            dtype=torch.float32).cuda()
-
-        random_indices = random.sample(
-            range(self.memory_bank.length), self.sample_size)
-        random_indices = torch.LongTensor(random_indices).cuda()
-
-        random_indices_list = [random_indices] * self.world_size
-        torch.distributed.all_gather(random_indices_list, random_indices)
-
-        if self.rank == 0:
-            random_features_list = [
-                self.memory_bank.feature_bank[indices] for indices in random_indices_list]
-            random_features_list = torch.cat(
-                random_features_list, dim=0).cuda()
-
-        torch.distributed.broadcast(
-            random_features_list, src=0)
-        random_features = random_features_list[self.sample_size *
-                                               self.rank: self.sample_size * (self.rank+1)]
-        random_features_labels = self.memory_bank.label_bank[random_indices]
-        random_features_labels = random_features_labels.cuda()
-        random_centroids = self.memory_bank.centroids[random_features_labels]
+        # negative_feature = self.get_negative(
+        #     feature[0], cls_labels, 3, self.neg_num)
+        # negative = torch.matmul(feature, negative_feature.permute(1, 0))
+        # negative = torch.cdist(feature[0], negative_feature)
 
         # loss input
         loss_inputs = dict()
-        loss_inputs['new_features_pairs'] = feature_pairs
-        loss_inputs['new_features_mean'] = mean_feature
-        loss_inputs['old_features'] = old_features
-        loss_inputs['new_prjections'] = outs
+        loss_inputs['positive'] = None
+        loss_inputs['negative'] = None
+        loss_inputs['cls_scores'] = outs
         loss_inputs['cls_labels'] = cls_labels
-        loss_inputs['new_features_centroids'] = new_features_centroids
-        loss_inputs['random_features'] = random_features
-        loss_inputs['random_centroids'] = random_centroids
 
         # loss calculation
         losses = self.head.loss(**loss_inputs)
-        # print(losses)
 
         # update samples memory
         change_ratio = self.memory_bank.update_samples_memory(
-            idx, mean_feature.detach())
+            idx, feature[0].detach())
         losses['change_ratio'] = change_ratio
 
         return losses
@@ -199,8 +246,7 @@ class ContrastiveODC(nn.Module):
 
     def forward(self, img, mode='train', **kwargs):
         if mode == 'train':
-            with torch.autograd.set_detect_anomaly(True):
-                return self.forward_train(img, **kwargs)
+            return self.forward_train(img, **kwargs)
         elif mode == 'test':
             return self.forward_test(img, **kwargs)
         elif mode == 'extract':

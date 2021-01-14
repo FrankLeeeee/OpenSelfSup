@@ -1,18 +1,26 @@
 _base_ = '../../base.py'
 # model settings
-# num_classes = 10000
-num_classes = 100
+# num_classes = 1000
+
+# NOTE
+# set to 200? ODC has classes = 10000 while imagenet only has 1000 classes
+num_classes = 20
+train_bs = 64
 
 model = dict(
-    type='ODC',
+    type='ContrastiveODC_V11',
     pretrained=None,
     with_sobel=False,
+    train_bs=train_bs,
+    neg_num=64,
+    neg_select=32,
     backbone=dict(
         type='ResNet',
         depth=50,
         in_channels=3,
         out_indices=[4],  # 0: conv-1, x: stage-x
-        norm_cfg=dict(type='SyncBN')),
+        norm_cfg=dict(type='SyncBN'),
+        with_cp=True),
     neck=dict(
         type='NonLinearNeckV0',
         in_channels=2048,
@@ -20,26 +28,29 @@ model = dict(
         out_channels=256,
         with_avg_pool=True),
     head=dict(
-        type='ClsHead',
+        type='ContrastiveODCHead_V11',
+        alpha=0.2,
+        beta=1,
         with_avg_pool=False,
         in_channels=256,
         num_classes=num_classes),
     memory_bank=dict(
         type='ODCMemory',
-        length=63916,
+        # length=63916,
+        length=5052,
         feat_dim=256,
         momentum=0.5,
         num_classes=num_classes,
-        min_cluster=20,
+        min_cluster=32,
         debug=False))
 # dataset settings
 data_source_cfg = dict(
     type='ImageNet',
     memcached=True,
     mclient_path='/mnt/lustre/share/memcached_client')
-data_train_list = 'data/imagenet/meta/subdataset/train_labeled_50percent_10interval_no_label.txt'
+data_train_list = 'data/imagenet/meta/subdataset/train_labeled_20percent_50interval_no_label.txt'
 data_train_root = 'data/imagenet/train'
-dataset_type = 'DeepClusterDataset'
+dataset_type = 'ContrastiveODCDataset'
 img_norm_cfg = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 train_pipeline = [
     dict(type='RandomResizedCrop', size=224),
@@ -62,7 +73,7 @@ extract_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
 ]
 data = dict(
-    imgs_per_gpu=64,  # 64*8
+    imgs_per_gpu=train_bs,  # 64*8
     sampling_replace=True,
     workers_per_gpu=2,
     train=dict(
@@ -71,6 +82,7 @@ data = dict(
             list_file=data_train_list, root=data_train_root,
             **data_source_cfg),
         pipeline=train_pipeline))
+
 # additional hooks
 custom_hooks = [
     dict(
@@ -80,6 +92,7 @@ custom_hooks = [
             workers_per_gpu=5,
             dataset=dict(
                 type=dataset_type,
+                for_extractor=True,
                 data_source=dict(
                     list_file=data_train_list,
                     root=data_train_root,
@@ -101,12 +114,32 @@ custom_hooks = [
         reweight_pow=0.5)
 ]
 # optimizer
+# optimizer = dict(type='LARS', lr=0.05, weight_decay=0.000001, momentum=0.9,
+#                  paramwise_options={
+#                      '(bn|gn)(\d+)?.(weight|bias)': dict(weight_decay=0., lars_exclude=True),
+#                      'bias': dict(weight_decay=0., lars_exclude=True)})
+
 optimizer = dict(
-    type='SGD', lr=0.015, momentum=0.9, weight_decay=0.00001,
+    type='SGD', lr=0.001, momentum=0.9, weight_decay=0.00001,
     nesterov=False,
     paramwise_options={'\Ahead.': dict(momentum=0.)})
+
 # learning policy
-lr_config = dict(policy='step', step=[400], gamma=0.4)
+lr_config = dict(
+    policy='CosineAnnealing',
+    min_lr=0.,
+    warmup='linear',
+    warmup_iters=10,
+    warmup_ratio=0.0001,
+    warmup_by_epoch=True)
 checkpoint_config = dict(interval=10)
+
 # runtime settings
-total_epochs = 400
+total_epochs = 200
+
+log_config = dict(
+    interval=10,
+    hooks=[
+        dict(type='TextLoggerHook'),
+        dict(type='TensorboardLoggerHook')
+    ])

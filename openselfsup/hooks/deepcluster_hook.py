@@ -1,14 +1,12 @@
 import numpy as np
-
-from mmcv.runner import Hook
-
 import torch
 import torch.distributed as dist
-
+from mmcv.runner import Hook
 from openselfsup.third_party import clustering as _clustering
 from openselfsup.utils import print_log
-from .registry import HOOKS
+
 from .extractor import Extractor
+from .registry import HOOKS
 
 
 @HOOKS.register_module
