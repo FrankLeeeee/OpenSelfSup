@@ -15,6 +15,7 @@ from .contrastive_odc_v10 import ContrastiveODC_V10
 from .contrastive_odc_v11 import ContrastiveODC_V11
 from .contrastive_odc_v12 import ContrastiveODC_V12
 from .contrastive_odc_v13 import ContrastiveODC_V13
+from .contrastive_odc_v14 import ContrastiveODC_V14
 from .deepcluster import DeepCluster
 from .heads import *
 from .memories import *
