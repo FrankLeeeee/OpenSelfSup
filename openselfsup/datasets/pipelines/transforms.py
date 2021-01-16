@@ -1,12 +1,11 @@
-import cv2
 import inspect
+
+import cv2
 import numpy as np
-from PIL import Image
-
 import torch
-from torchvision import transforms as _transforms
-
 from openselfsup.utils import build_from_cfg
+from PIL import Image
+from torchvision import transforms as _transforms
 
 from ..registry import PIPELINES
 
@@ -76,7 +75,7 @@ class Lighting(object):
         return repr_str
 
 
-@PIPELINES.register_module
+@PIPELINES.register_module(force=True)
 class GaussianBlur(object):
     """Gaussian blur augmentation in SimCLR https://arxiv.org/abs/2002.05709."""
 
@@ -105,7 +104,7 @@ class Solarization(object):
 
     def __call__(self, img):
         img = np.array(img)
-        img = np.where(img < self.threshold, img, 255 -img)
+        img = np.where(img < self.threshold, img, 255 - img)
         return Image.fromarray(img.astype(np.uint8))
 
     def __repr__(self):
