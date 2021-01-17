@@ -1,3 +1,5 @@
+# ON NTU HPC
+
 _base_ = '../../base.py'
 # model settings
 # num_classes = 1000
@@ -135,6 +137,7 @@ checkpoint_config = dict(interval=10)
 
 # runtime settings
 total_epochs = 200
+cudnn_benchmark = False
 
 log_config = dict(
     interval=10,

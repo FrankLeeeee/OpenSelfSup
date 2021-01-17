@@ -1,4 +1,5 @@
 from __future__ import division
+
 import argparse
 import importlib
 import os
@@ -9,12 +10,13 @@ import mmcv
 import torch
 from mmcv import Config
 from mmcv.runner import init_dist
-
 from openselfsup import __version__
 from openselfsup.apis import set_random_seed, train_model
 from openselfsup.datasets import build_dataset
 from openselfsup.models import build_model
 from openselfsup.utils import collect_env, get_root_logger, traverse_replace
+
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 
 def parse_args():
@@ -47,7 +49,7 @@ def parse_args():
         help='job launcher')
     parser.add_argument('--local_rank', type=int, default=0)
     parser.add_argument('--port', type=int, default=29500,
-        help='port only works when launcher=="slurm"')
+                        help='port only works when launcher=="slurm"')
     args = parser.parse_args()
     if 'LOCAL_RANK' not in os.environ:
         os.environ['LOCAL_RANK'] = str(args.local_rank)
