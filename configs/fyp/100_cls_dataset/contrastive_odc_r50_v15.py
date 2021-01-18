@@ -21,7 +21,7 @@ model = dict(
         in_channels=3,
         out_indices=[4],  # 0: conv-1, x: stage-x
         norm_cfg=dict(type='SyncBN'),
-        with_cp=False),
+        with_cp=True),
     neck=dict(
         type='NonLinearNeckV0',
         in_channels=2048,
@@ -137,7 +137,7 @@ checkpoint_config = dict(interval=10)
 
 # runtime settings
 total_epochs = 200
-cudnn_benchmark = False
+# cudnn_benchmark = False
 
 log_config = dict(
     interval=10,

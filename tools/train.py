@@ -16,8 +16,6 @@ from openselfsup.datasets import build_dataset
 from openselfsup.models import build_model
 from openselfsup.utils import collect_env, get_root_logger, traverse_replace
 
-os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a model')
