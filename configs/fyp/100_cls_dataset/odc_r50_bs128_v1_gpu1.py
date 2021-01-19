@@ -12,7 +12,8 @@ model = dict(
         depth=50,
         in_channels=3,
         out_indices=[4],  # 0: conv-1, x: stage-x
-        norm_cfg=dict(type='SyncBN')),
+        norm_cfg=dict(type='SyncBN'),
+        with_cp=False),
     neck=dict(
         type='NonLinearNeckV0',
         in_channels=2048,
@@ -62,9 +63,9 @@ extract_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
 ]
 data = dict(
-    imgs_per_gpu=64,  # 64*8
+    imgs_per_gpu=128,  # 64*8
     sampling_replace=True,
-    workers_per_gpu=2,
+    workers_per_gpu=16,
     train=dict(
         type=dataset_type,
         data_source=dict(
@@ -77,7 +78,7 @@ custom_hooks = [
         type='DeepClusterHook',
         extractor=dict(
             imgs_per_gpu=128,
-            workers_per_gpu=5,
+            workers_per_gpu=16,
             dataset=dict(
                 type=dataset_type,
                 data_source=dict(
@@ -102,11 +103,11 @@ custom_hooks = [
 ]
 # optimizer
 optimizer = dict(
-    type='SGD', lr=0.015, momentum=0.9, weight_decay=0.00001,
+    type='SGD', lr=0.02, momentum=0.9, weight_decay=0.00001,
     nesterov=False,
     paramwise_options={'\Ahead.': dict(momentum=0.)})
 # learning policy
 lr_config = dict(policy='step', step=[400], gamma=0.4)
 checkpoint_config = dict(interval=10)
 # runtime settings
-total_epochs = 400
+total_epochs = 200

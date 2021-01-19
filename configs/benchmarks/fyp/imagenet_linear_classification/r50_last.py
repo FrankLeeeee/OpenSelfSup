@@ -10,7 +10,8 @@ model = dict(
         in_channels=3,
         out_indices=[4],  # 0: conv-1, x: stage-x
         norm_cfg=dict(type='BN'),
-        frozen_stages=4),
+        frozen_stages=4,
+        with_cp=True),
     head=dict(
         type='ClsHead', with_avg_pool=True, in_channels=2048,
         num_classes=100))
@@ -58,7 +59,7 @@ custom_hooks = [
         dataset=data['val'],
         initial=True,
         interval=1,
-        imgs_per_gpu=128,
+        imgs_per_gpu=32,
         workers_per_gpu=4,
         eval_param=dict(topk=(1, 5)))
 ]
