@@ -9,7 +9,7 @@ model = dict(
         in_channels=3,
         out_indices=[4],  # 0: conv-1, x: stage-x
         norm_cfg=dict(type='SyncBN'),
-        with_cp=True),
+        with_cp=False),
     neck=dict(
         type='NonLinearNeckSimCLR', # SimCLR non-linear neck
         in_channels=2048,
@@ -79,5 +79,13 @@ lr_config = dict(
     warmup_ratio=0.0001,
     warmup_by_epoch=True)
 checkpoint_config = dict(interval=10)
+log_config = dict(
+    interval=10,
+    hooks=[
+        dict(type='TextLoggerHook'),
+        dict(type='TensorboardLoggerHook')
+    ])
+
+
 # runtime settings
 total_epochs = 200
