@@ -129,7 +129,7 @@ custom_hooks = [
         reweight_pow=0.5)
 ]
 # optimizer
-optimizer = dict(type='LARS', lr=0.1, weight_decay=0.000001, momentum=0.9,
+optimizer = dict(type='LARS', lr=0.2, weight_decay=0.000001, momentum=0.9,
                  paramwise_options={
                      '(bn|gn)(\d+)?.(weight|bias)': dict(weight_decay=0., lars_exclude=True),
                      'bias': dict(weight_decay=0., lars_exclude=True)})
