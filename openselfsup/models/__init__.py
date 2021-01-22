@@ -10,6 +10,7 @@ from .contrastive_odc_v5 import ContrastiveODC_V5
 from .contrastive_odc_v6 import ContrastiveODC_V6
 from .contrastive_odc_v7 import ContrastiveODC_V7
 from .contrastive_odc_v7_2 import ContrastiveODC_V7_2
+from .contrastive_odc_v7_3 import ContrastiveODC_V7_3
 from .contrastive_odc_v8 import ContrastiveODC_V8
 from .contrastive_odc_v9 import ContrastiveODC_V9
 from .contrastive_odc_v10 import ContrastiveODC_V10

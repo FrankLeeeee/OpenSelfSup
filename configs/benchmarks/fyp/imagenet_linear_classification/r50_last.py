@@ -11,7 +11,7 @@ model = dict(
         out_indices=[4],  # 0: conv-1, x: stage-x
         norm_cfg=dict(type='BN'),
         frozen_stages=4,
-        with_cp=True),
+        with_cp=False),
     head=dict(
         type='ClsHead', with_avg_pool=True, in_channels=2048,
         num_classes=100))
@@ -40,7 +40,7 @@ test_pipeline = [
 ]
 data = dict(
     imgs_per_gpu=128,  # total 32*8=256, 8GPU linear cls
-    workers_per_gpu=5,
+    workers_per_gpu=4,
     train=dict(
         type=dataset_type,
         data_source=dict(
@@ -59,7 +59,7 @@ custom_hooks = [
         dataset=data['val'],
         initial=True,
         interval=1,
-        imgs_per_gpu=32,
+        imgs_per_gpu=64,
         workers_per_gpu=4,
         eval_param=dict(topk=(1, 5)))
 ]
