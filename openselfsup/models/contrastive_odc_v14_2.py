@@ -270,7 +270,9 @@ class ContrastiveODC_V14_2(nn.Module):
         cluster_negative_feature = self.get_negative(
             feature, cls_labels, 8, self.neg_num)
 
-        z = z[::2]
+        start = self.world_size * bs
+        start = (self.world_size + 1 ) * bs
+        z = z[start:end:2]
         # print(z.shape)
         # print(centroid_features.shape)
         # print(cluster_negative_feature.shape)
