@@ -16,7 +16,7 @@ from .utils import GatherLayer, Sobel
 
 
 @ MODELS.register_module
-class ContrastiveODC_V7_3(nn.Module):
+class ContrastiveODC_V7_2(nn.Module):
     """Contrastive Learning with ODC.
 
     Args:
@@ -38,7 +38,7 @@ class ContrastiveODC_V7_3(nn.Module):
                  pretrained=None,
                  train=True
                  ):
-        super(ContrastiveODC_V7_3, self).__init__()
+        super(ContrastiveODC_V7_2, self).__init__()
         self.with_sobel = with_sobel
         if with_sobel:
             self.sobel_layer = Sobel()
