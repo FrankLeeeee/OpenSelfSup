@@ -36,6 +36,7 @@ class ContrastiveODC_V15(nn.Module):
                  head=None,
                  memory_bank=None,
                  pretrained=None,
+                 train=True,
                  ):
         super(ContrastiveODC_V15, self).__init__()
         self.with_sobel = with_sobel
@@ -65,8 +66,7 @@ class ContrastiveODC_V15(nn.Module):
                 Default: None.
         """
         if pretrained is not None:
-            print_log('load model from: {}'.format(
-                pretrained), logger='root')
+            print_log('load model from: {}'.format(pretrained), logger='root')
         self.backbone.init_weights(pretrained=pretrained)
         self.neck.init_weights(init_linear='kaiming')
         self.head.init_weights(init_linear='normal')
@@ -91,11 +91,10 @@ class ContrastiveODC_V15(nn.Module):
         mask = 1 - torch.eye(N * 2, dtype=torch.uint8).cuda()
         pos_ind = (torch.arange(N * 2).cuda(),
                    2 * torch.arange(N, dtype=torch.long).unsqueeze(1).repeat(
-            1, 2).view(-1, 1).squeeze().cuda())
+                       1, 2).view(-1, 1).squeeze().cuda())
         neg_mask = torch.ones((N * 2, N * 2 - 1), dtype=torch.uint8).cuda()
         neg_mask[pos_ind] = 0
         return mask, pos_ind, neg_mask
-
 
     def forward_train(self, img, idx, **kwargs):
         """Forward computation during training.
@@ -118,7 +117,7 @@ class ContrastiveODC_V15(nn.Module):
         x = self.forward_backbone(img)  # 2n
         feature = self.neck(x)  # (2n) * d
 
-        # for instance-level contrastive loss
+        # for contrastive loss
         z = feature[0]
         z = z / (torch.norm(z, p=2, dim=1, keepdim=True) + 1e-10)
         z = torch.cat(GatherLayer.apply(z), dim=0)  # (2N)xd
@@ -128,33 +127,35 @@ class ContrastiveODC_V15(nn.Module):
         mask, pos_ind, neg_mask = self._create_buffer(N)
         # remove diagonal, (2N)x(2N-1)
         s = torch.masked_select(s, mask == 1).reshape(s.size(0), -1)
-        ins_pos = s[pos_ind].unsqueeze(1)  # (2N)x1
+        positive = s[pos_ind].unsqueeze(1)  # (2N)x1
         # select negative, (2N)x(2N-2)
-        ins_neg = torch.masked_select(s, neg_mask == 1).reshape(s.size(0), -1)
+        negative = torch.masked_select(s, neg_mask == 1).reshape(s.size(0), -1)
 
         # for classification loss
         # choose the first feature to feed into memory bank
         feature_pairs = torch.split(
             feature[0], split_size_or_sections=2, dim=0)
 
-        feature_x1 = [pair[0]
-                   for pair in feature_pairs]
-        feature_x2 = [pair[1]
-                   for pair in feature_pairs]
-        feature_x1 = torch.stack(feature_x1, dim=0)
-        feature_x2 = torch.stack(feature_x2, dim=0)
+        feature_to_odc = [pair[0]
+                          for pair in feature_pairs]
+        feature_to_cts = [pair[1]
+                          for pair in feature_pairs]
+        feature_to_odc = torch.stack(feature_to_odc, dim=0)
+        feature_to_cts = torch.stack(feature_to_cts, dim=0)
 
         # projection head
-        outs_x1 = self.head([feature_x1])  # (2n) * k
-        outs_x2 = self.head([feature_x2])  # (2n) * k
+        outs_to_odc = self.head([feature_to_odc])  # (2n) * k
+        outs_to_cts = self.head([feature_to_cts])  # (2n) * k
 
+        # get centroids for the labels
+        # centroids = self.memory_bank.centroids[cls_labels]
 
         # loss input
         loss_inputs = dict()
-        loss_inputs['instance_positive'] = ins_pos
-        loss_inputs['instance_negative'] = ins_neg
-        loss_inputs['cls_score_x1'] = outs_x1[0]
-        loss_inputs['cls_score_x2'] = outs_x2[0]
+        loss_inputs['positive'] = positive
+        loss_inputs['negative'] = negative
+        loss_inputs['outs_to_odc'] = outs_to_odc
+        loss_inputs['outs_to_cts'] = outs_to_cts
 
         # loss calculation
         losses = self.head.loss(**loss_inputs)
@@ -162,7 +163,7 @@ class ContrastiveODC_V15(nn.Module):
 
         # update samples memory
         change_ratio = self.memory_bank.update_samples_memory(
-            idx, feature_x1.detach())
+            idx, feature_to_odc.detach())
         losses['change_ratio'] = change_ratio
 
         return losses

@@ -1,3 +1,5 @@
+# ON NTU HPC
+
 _base_ = '../../base.py'
 # model settings
 # num_classes = 1000
@@ -19,9 +21,9 @@ model = dict(
         norm_cfg=dict(type='SyncBN'),
         with_cp=True),
     neck=dict(
-        type='NonLinearNeckSimCLR',
+        type='NonLinearNeckV0',
         in_channels=2048,
-        hid_channels=2048,
+        hid_channels=512,
         out_channels=256,
         with_avg_pool=True),
     head=dict(
@@ -47,7 +49,7 @@ data_source_cfg = dict(
     mclient_path='/mnt/lustre/share/memcached_client')
 data_train_list = 'data/imagenet/meta/subdataset/train_labeled_50percent_10interval_no_label.txt'
 data_train_root = 'data/imagenet/train'
-dataset_type = 'ContrastiveODCDataset'
+dataset_type = 'DeepClusterDataset'
 img_norm_cfg = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 train_pipeline = [
@@ -86,6 +88,7 @@ extract_pipeline = [
     dict(type='ToTensor'),
     dict(type='Normalize', **img_norm_cfg),
 ]
+
 data = dict(
     imgs_per_gpu=train_bs,  # 64*8
     sampling_replace=True,
@@ -106,7 +109,6 @@ custom_hooks = [
             workers_per_gpu=4,
             dataset=dict(
                 type=dataset_type,
-                for_extractor=True,
                 data_source=dict(
                     list_file=data_train_list,
                     root=data_train_root,
@@ -114,7 +116,7 @@ custom_hooks = [
                 pipeline=extract_pipeline)),
         clustering=dict(type='Kmeans', k=num_classes, pca_dim=-1),  # no pca
         unif_sampling=False,
-        reweight=True,
+        reweight=False,
         reweight_pow=0.5,
         init_memory=True,
         initial=True,  # call initially
@@ -124,10 +126,9 @@ custom_hooks = [
         centroids_update_interval=10,  # iter
         deal_with_small_clusters_interval=1,
         evaluate_interval=50,
-        reweight=True,
+        reweight=False,
         reweight_pow=0.5)
 ]
-
 # optimizer
 optimizer = dict(type='LARS', lr=0.2, weight_decay=0.000001, momentum=0.9,
                  paramwise_options={
@@ -147,7 +148,6 @@ lr_config = dict(
     warmup_iters=10,
     warmup_ratio=0.0001,
     warmup_by_epoch=True)
-    
 checkpoint_config = dict(interval=20)
 
 # runtime settings

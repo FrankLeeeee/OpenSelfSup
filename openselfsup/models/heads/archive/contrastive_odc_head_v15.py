@@ -8,7 +8,7 @@ from ..utils import accuracy
 
 
 @HEADS.register_module
-class ContrastiveODCHead_V16(nn.Module):
+class ContrastiveODCHead_V15(nn.Module):
     """Head for contrastive learning.
 
     Args:
@@ -24,7 +24,7 @@ class ContrastiveODCHead_V16(nn.Module):
                  in_channels=2048,
                  num_classes=1000,
                  temperature=0.1):
-        super(ContrastiveODCHead_V16, self).__init__()
+        super(ContrastiveODCHead_V15, self).__init__()
         self.alpha = alpha
         self.beta = beta
         self.with_avg_pool = with_avg_pool
@@ -37,8 +37,7 @@ class ContrastiveODCHead_V16(nn.Module):
         self.criterion = nn.CrossEntropyLoss()
 
         # for contrastive loss
-        self.contrastive_criterion = nn.CrossEntropyLoss()
-        self.cls_score_contrastive_criterion = nn.MSELoss()
+        self.cls_score_loss = nn.MSELoss()
 
         if self.with_avg_pool:
             self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
@@ -71,13 +70,7 @@ class ContrastiveODCHead_V16(nn.Module):
         cls_score = self.fc_cls(x)
         return [cls_score]
 
-    def calc_cls_loss(self, cls_score, cls_labels):
-        assert isinstance(cls_score, (tuple, list)) and len(cls_score) == 1
-        cls_loss = self.criterion(cls_score[0], cls_labels)
-        acc = accuracy(cls_score[0], cls_labels)
-        return cls_loss, acc
-
-    def calc_cts_loss(self, pos, neg):
+    def calc_instance_cts_loss(self, pos, neg):
         """
         Args:
             pos (Tensor): Nx1 positive similarity.
@@ -88,19 +81,23 @@ class ContrastiveODCHead_V16(nn.Module):
         logits = torch.cat((pos, neg), dim=1)
         logits /= self.temperature
         labels = torch.zeros((N, ), dtype=torch.long).cuda()
-        loss = self.contrastive_criterion(logits, labels)
+        loss = self.criterion(logits, labels)
         return loss
 
-    def calc_cls_score_ctc_loss(self, outs_to_odc, outs_to_cts):
-        return self.cls_score_contrastive_criterion(outs_to_odc[0], outs_to_cts[0])
+    def calc_cls_score_loss(self, out1, out2):
+        """
+        Args:
+            pos (Tensor): Nx1 positive similarity.
+            neg (Tensor): Nxk negative similarity.
+        """
+        loss = self.cls_score_loss(out1, out2)
+        return loss
 
     def loss(self,
-             positive,
-             negative,
-             outs_to_odc,
-             outs_to_cts,
-             cls_scores,
-             cls_labels,
+             instance_positive,
+             instance_negative,
+             cls_score_x1,
+             cls_score_x2,
              ):
         """Forward head.
 
@@ -118,14 +115,11 @@ class ContrastiveODCHead_V16(nn.Module):
             dict[str, Tensor]: A dictionary of loss components.
         """
 
-        cls_loss, acc = self.calc_cls_loss(cls_scores, cls_labels)
-        cts_loss = self.calc_cts_loss(positive, negative)
-        cls_cts_loss = self.calc_cls_score_ctc_loss(
-            outs_to_odc, outs_to_cts)
+        ins_cts_loss = self.calc_instance_cts_loss(instance_positive, instance_negative)
+        cls_out_loss = self.calc_cls_score_loss(cls_score_x1, cls_score_x2)
         losses = dict()
-        losses['cls_loss'] = cls_loss
-        losses['cts_loss'] = cts_loss
-        losses['cls_cts_loss'] = cls_cts_loss
-        losses['acc'] = acc
-        losses['loss'] = 0.1 * cls_loss + 0.6 * cts_loss + 0.3 * cls_cts_loss
+        losses['ins_cts_loss'] = ins_cts_loss
+        losses['cls_out_loss'] = cls_out_loss
+        losses['loss'] = ins_cts_loss + cls_out_loss
+        
         return losses

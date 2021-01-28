@@ -16,7 +16,7 @@ from .utils import GatherLayer, Sobel
 
 
 @ MODELS.register_module
-class ContrastiveODC_V16(nn.Module):
+class ContrastiveODC_V15(nn.Module):
     """Contrastive Learning with ODC.
 
     Args:
@@ -36,9 +36,8 @@ class ContrastiveODC_V16(nn.Module):
                  head=None,
                  memory_bank=None,
                  pretrained=None,
-                 train=True,
                  ):
-        super(ContrastiveODC_V16, self).__init__()
+        super(ContrastiveODC_V15, self).__init__()
         self.with_sobel = with_sobel
         if with_sobel:
             self.sobel_layer = Sobel()
@@ -52,9 +51,9 @@ class ContrastiveODC_V16(nn.Module):
 
         # set reweight tensors
         self.num_classes = head.num_classes
-        self.loss_weight = torch.ones((self.num_classes, ),
-                                      dtype=torch.float32).cuda()
-        self.loss_weight /= self.loss_weight.sum()
+        # self.loss_weight = torch.ones((self.num_classes, ),
+        #                               dtype=torch.float32).cuda()
+        # self.loss_weight /= self.loss_weight.sum()
 
         self.rank, self.world_size = get_dist_info()
 
@@ -66,7 +65,8 @@ class ContrastiveODC_V16(nn.Module):
                 Default: None.
         """
         if pretrained is not None:
-            print_log('load model from: {}'.format(pretrained), logger='root')
+            print_log('load model from: {}'.format(
+                pretrained), logger='root')
         self.backbone.init_weights(pretrained=pretrained)
         self.neck.init_weights(init_linear='kaiming')
         self.head.init_weights(init_linear='normal')
@@ -91,10 +91,11 @@ class ContrastiveODC_V16(nn.Module):
         mask = 1 - torch.eye(N * 2, dtype=torch.uint8).cuda()
         pos_ind = (torch.arange(N * 2).cuda(),
                    2 * torch.arange(N, dtype=torch.long).unsqueeze(1).repeat(
-                       1, 2).view(-1, 1).squeeze().cuda())
+            1, 2).view(-1, 1).squeeze().cuda())
         neg_mask = torch.ones((N * 2, N * 2 - 1), dtype=torch.uint8).cuda()
         neg_mask[pos_ind] = 0
         return mask, pos_ind, neg_mask
+
 
     def forward_train(self, img, idx, **kwargs):
         """Forward computation during training.
@@ -117,7 +118,7 @@ class ContrastiveODC_V16(nn.Module):
         x = self.forward_backbone(img)  # 2n
         feature = self.neck(x)  # (2n) * d
 
-        # for contrastive loss
+        # for instance-level contrastive loss
         z = feature[0]
         z = z / (torch.norm(z, p=2, dim=1, keepdim=True) + 1e-10)
         z = torch.cat(GatherLayer.apply(z), dim=0)  # (2N)xd
@@ -127,44 +128,33 @@ class ContrastiveODC_V16(nn.Module):
         mask, pos_ind, neg_mask = self._create_buffer(N)
         # remove diagonal, (2N)x(2N-1)
         s = torch.masked_select(s, mask == 1).reshape(s.size(0), -1)
-        positive = s[pos_ind].unsqueeze(1)  # (2N)x1
+        ins_pos = s[pos_ind].unsqueeze(1)  # (2N)x1
         # select negative, (2N)x(2N-2)
-        negative = torch.masked_select(s, neg_mask == 1).reshape(s.size(0), -1)
+        ins_neg = torch.masked_select(s, neg_mask == 1).reshape(s.size(0), -1)
 
         # for classification loss
         # choose the first feature to feed into memory bank
         feature_pairs = torch.split(
             feature[0], split_size_or_sections=2, dim=0)
 
-        feature_to_odc = [pair[0]
-                          for pair in feature_pairs]
-        feature_to_cts = [pair[1]
-                          for pair in feature_pairs]
-        feature_to_odc = torch.stack(feature_to_odc, dim=0)
-        feature_to_cts = torch.stack(feature_to_cts, dim=0)
+        feature_x1 = [pair[0]
+                   for pair in feature_pairs]
+        feature_x2 = [pair[1]
+                   for pair in feature_pairs]
+        feature_x1 = torch.stack(feature_x1, dim=0)
+        feature_x2 = torch.stack(feature_x2, dim=0)
 
         # projection head
-        outs_to_odc = self.head([feature_to_odc])  # (2n) * k
-        outs_to_cts = self.head([feature_to_cts])  # (2n) * k
+        outs_x1 = self.head([feature_x1])  # (2n) * k
+        outs_x2 = self.head([feature_x2])  # (2n) * k
 
-        # get items for loss
-        if self.memory_bank.label_bank.is_cuda:
-            cls_labels = self.memory_bank.label_bank[idx]
-        else:
-            cls_labels = self.memory_bank.label_bank[idx.cpu()].cuda()
-
-        # get centroids for the labels
-        # centroids = self.memory_bank.centroids[cls_labels]
 
         # loss input
         loss_inputs = dict()
-        loss_inputs['positive'] = positive
-        loss_inputs['negative'] = negative
-        loss_inputs['outs_to_odc'] = outs_to_odc
-        loss_inputs['outs_to_cts'] = outs_to_cts
-        loss_inputs['cls_scores'] = outs_to_odc
-        loss_inputs['cls_labels'] = cls_labels
-        # loss_inputs['centroids'] = centroids
+        loss_inputs['instance_positive'] = ins_pos
+        loss_inputs['instance_negative'] = ins_neg
+        loss_inputs['cls_score_x1'] = outs_x1[0]
+        loss_inputs['cls_score_x2'] = outs_x2[0]
 
         # loss calculation
         losses = self.head.loss(**loss_inputs)
@@ -172,7 +162,7 @@ class ContrastiveODC_V16(nn.Module):
 
         # update samples memory
         change_ratio = self.memory_bank.update_samples_memory(
-            idx, feature_to_odc.detach())
+            idx, feature_x1.detach())
         losses['change_ratio'] = change_ratio
 
         return losses
@@ -195,22 +185,23 @@ class ContrastiveODC_V16(nn.Module):
             raise Exception("No such mode: {}".format(mode))
 
     def set_reweight(self, labels=None, reweight_pow=0.5):
-        """Loss re-weighting.
+        pass
+        # """Loss re-weighting.
 
-        Re-weighting the loss according to the number of samples in each class.
+        # Re-weighting the loss according to the number of samples in each class.
 
-        Args:
-            labels (numpy.ndarray): Label assignments. Default: None.
-            reweight_pow (float): The power of re-weighting. Default: 0.5.
-        """
-        if labels is None:
-            if self.memory_bank.label_bank.is_cuda:
-                labels = self.memory_bank.label_bank.cpu().numpy()
-            else:
-                labels = self.memory_bank.label_bank.numpy()
-        hist = np.bincount(
-            labels, minlength=self.num_classes).astype(np.float32)
-        inv_hist = (1. / (hist + 1e-5))**reweight_pow
-        weight = inv_hist / inv_hist.sum()
-        self.loss_weight.copy_(torch.from_numpy(weight))
-        self.head.criterion = nn.CrossEntropyLoss(weight=self.loss_weight)
+        # Args:
+        #     labels (numpy.ndarray): Label assignments. Default: None.
+        #     reweight_pow (float): The power of re-weighting. Default: 0.5.
+        # """
+        # if labels is None:
+        #     if self.memory_bank.label_bank.is_cuda:
+        #         labels = self.memory_bank.label_bank.cpu().numpy()
+        #     else:
+        #         labels = self.memory_bank.label_bank.numpy()
+        # hist = np.bincount(
+        #     labels, minlength=self.num_classes).astype(np.float32)
+        # inv_hist = (1. / (hist + 1e-5))**reweight_pow
+        # weight = inv_hist / inv_hist.sum()
+        # self.loss_weight.copy_(torch.from_numpy(weight))
+        # self.head.criterion = nn.CrossEntropyLoss(weight=self.loss_weight)
