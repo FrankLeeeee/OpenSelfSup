@@ -16,7 +16,7 @@ from .utils import GatherLayer, Sobel
 
 
 @ MODELS.register_module
-class ContrastiveODC_V15(nn.Module):
+class ContrastiveODC_V18(nn.Module):
     """Contrastive Learning with ODC.
 
     Args:
@@ -36,8 +36,9 @@ class ContrastiveODC_V15(nn.Module):
                  head=None,
                  memory_bank=None,
                  pretrained=None,
+                 num_neg_centroids=32
                  ):
-        super(ContrastiveODC_V15, self).__init__()
+        super(ContrastiveODC_V18, self).__init__()
         self.with_sobel = with_sobel
         if with_sobel:
             self.sobel_layer = Sobel()
@@ -51,9 +52,10 @@ class ContrastiveODC_V15(nn.Module):
 
         # set reweight tensors
         self.num_classes = head.num_classes
-        # self.loss_weight = torch.ones((self.num_classes, ),
-        #                               dtype=torch.float32).cuda()
-        # self.loss_weight /= self.loss_weight.sum()
+        self.num_neg_centroids = num_neg_centroids
+        self.loss_weight = torch.ones((self.num_classes, ),
+                                      dtype=torch.float32).cuda()
+        self.loss_weight /= self.loss_weight.sum()
 
         self.rank, self.world_size = get_dist_info()
 
@@ -96,6 +98,24 @@ class ContrastiveODC_V15(nn.Module):
         neg_mask[pos_ind] = 0
         return mask, pos_ind, neg_mask
 
+    def get_neg_centroids(self, idx, num_neg_centroids):
+        N = idx.size(0)
+        all_idx = torch.arange(0, self.num_classes).cuda()
+        mask = ~(idx.unsqueeze(1).eq(all_idx))
+
+        # get negative index
+        neg_idx = [
+            torch.masked_select(all_idx, mask[i])[torch.randperm(self.num_classes-1)][:num_neg_centroids]
+            for i in range(mask.size(0))
+        ]
+
+        neg_idx = torch.stack(neg_idx, dim=0)
+        neg_idx = neg_idx.flatten().long()
+        negative_centroids = self.memory_bank.centroids[neg_idx]
+        negative_centroids = negative_centroids.view(N, num_neg_centroids, -1)
+        
+        return negative_centroids
+
 
     def forward_train(self, img, idx, **kwargs):
         """Forward computation during training.
@@ -132,37 +152,67 @@ class ContrastiveODC_V15(nn.Module):
         # select negative, (2N)x(2N-2)
         ins_neg = torch.masked_select(s, neg_mask == 1).reshape(s.size(0), -1)
 
-        # for classification loss
+        # for cluster level contrastive loss
+        # get labels
+        if self.memory_bank.label_bank.is_cuda:
+            cls_labels = self.memory_bank.label_bank[idx]
+        else:
+            cls_labels = self.memory_bank.label_bank[idx.cpu()].cuda()
+
+        # get positive exmaples - centroids
+        bs = idx.size(0)
+        pos_centroids = self.memory_bank.centroids[cls_labels]
+        neg_centroids = self.get_neg_centroids(idx, self.num_neg_centroids)
+
         # choose the first feature to feed into memory bank
         feature_pairs = torch.split(
             feature[0], split_size_or_sections=2, dim=0)
-
-        feature_x1 = [pair[0]
+        feature_to_odc = [pair[0]
                    for pair in feature_pairs]
-        feature_x2 = [pair[1]
+        feature_to_cts = [pair[1]
                    for pair in feature_pairs]
-        feature_x1 = torch.stack(feature_x1, dim=0)
-        feature_x2 = torch.stack(feature_x2, dim=0)
+        feature_to_odc = torch.stack(feature_to_odc, dim=0)
+        feature_to_cts = torch.stack(feature_to_cts, dim=0)
 
-        # projection head
-        outs_x1 = self.head([feature_x1])  # (2n) * k
-        outs_x2 = self.head([feature_x2])  # (2n) * k
+        # calculate simlilarity for contrastive loss
+        neg_centroids = neg_centroids.view(bs*self.num_neg_centroids, -1)
+        combine = torch.cat([
+            feature_to_odc, feature_to_cts, pos_centroids, neg_centroids
+            ], dim=0)
+        combine = combine / (torch.norm(combine, p=2, dim=1, keepdim=True))
+
+        feature_to_odc_norm = combine[:bs]
+        feature_to_cts_norm = combine[bs:bs*2]
+        pos_centroids_norm = combine[bs*2:bs*3]
+        neg_centroids_norm = combine[bs*3:].view(bs, self.num_neg_centroids, -1)
+        
+        
+        pos_1 = torch.mul(feature_to_odc_norm, pos_centroids_norm).sum(dim=1).unsqueeze(1)
+        pos_2 = torch.mul(feature_to_cts_norm, pos_centroids_norm).sum(dim=1).unsqueeze(1)
+        neg_1 = torch.mul(feature_to_odc_norm.unsqueeze(1), neg_centroids_norm).sum(dim=2)
+        neg_2 = torch.mul(feature_to_cts_norm.unsqueeze(1), neg_centroids_norm).sum(dim=2)
+        
+        # for classification loss
+        outs = self.head([feature_to_odc])
 
 
         # loss input
         loss_inputs = dict()
         loss_inputs['instance_positive'] = ins_pos
         loss_inputs['instance_negative'] = ins_neg
-        loss_inputs['cls_score_x1'] = outs_x1[0]
-        loss_inputs['cls_score_x2'] = outs_x2[0]
-
+        loss_inputs['cluster_positive_1'] = pos_1
+        loss_inputs['cluster_negative_1'] = neg_1
+        loss_inputs['cluster_positive_2'] = pos_2
+        loss_inputs['cluster_negative_2'] = neg_2
+        loss_inputs['cls_scores'] = outs
+        loss_inputs['cls_labels'] = cls_labels
+        
         # loss calculation
         losses = self.head.loss(**loss_inputs)
-        # print(losses)
 
         # update samples memory
         change_ratio = self.memory_bank.update_samples_memory(
-            idx, feature_x1.detach())
+            idx, feature_to_odc.detach())
         losses['change_ratio'] = change_ratio
 
         return losses
@@ -185,23 +235,22 @@ class ContrastiveODC_V15(nn.Module):
             raise Exception("No such mode: {}".format(mode))
 
     def set_reweight(self, labels=None, reweight_pow=0.5):
-        pass
-        # """Loss re-weighting.
+        """Loss re-weighting.
 
-        # Re-weighting the loss according to the number of samples in each class.
+        Re-weighting the loss according to the number of samples in each class.
 
-        # Args:
-        #     labels (numpy.ndarray): Label assignments. Default: None.
-        #     reweight_pow (float): The power of re-weighting. Default: 0.5.
-        # """
-        # if labels is None:
-        #     if self.memory_bank.label_bank.is_cuda:
-        #         labels = self.memory_bank.label_bank.cpu().numpy()
-        #     else:
-        #         labels = self.memory_bank.label_bank.numpy()
-        # hist = np.bincount(
-        #     labels, minlength=self.num_classes).astype(np.float32)
-        # inv_hist = (1. / (hist + 1e-5))**reweight_pow
-        # weight = inv_hist / inv_hist.sum()
-        # self.loss_weight.copy_(torch.from_numpy(weight))
-        # self.head.criterion = nn.CrossEntropyLoss(weight=self.loss_weight)
+        Args:
+            labels (numpy.ndarray): Label assignments. Default: None.
+            reweight_pow (float): The power of re-weighting. Default: 0.5.
+        """
+        if labels is None:
+            if self.memory_bank.label_bank.is_cuda:
+                labels = self.memory_bank.label_bank.cpu().numpy()
+            else:
+                labels = self.memory_bank.label_bank.numpy()
+        hist = np.bincount(
+            labels, minlength=self.num_classes).astype(np.float32)
+        inv_hist = (1. / (hist + 1e-5))**reweight_pow
+        weight = inv_hist / inv_hist.sum()
+        self.loss_weight.copy_(torch.from_numpy(weight))
+        self.head.criterion = nn.CrossEntropyLoss(weight=self.loss_weight)

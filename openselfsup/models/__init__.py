@@ -6,6 +6,8 @@ from .contrastive_odc import ContrastiveODC
 from .contrastive_odc_v7_2 import ContrastiveODC_V7_2
 from .contrastive_odc_v15 import ContrastiveODC_V15
 from .contrastive_odc_v16 import ContrastiveODC_V16
+from .contrastive_odc_v17 import ContrastiveODC_V17
+from .contrastive_odc_v18 import ContrastiveODC_V18
 from .deepcluster import DeepCluster
 from .heads import *
 from .memories import *
