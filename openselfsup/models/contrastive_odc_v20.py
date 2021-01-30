@@ -188,7 +188,7 @@ class ContrastiveODC_V20(nn.Module):
         ).cuda()
 
         if self.rank == 0:
-            idx_collection = self.memory_bank.feature_bank[idx_list]
+            idx_collection = self.memory_bank.feature_bank[idx_list][:].cuda()
         
         torch.distributed.broadcast(idx_collection, src=0)
         idx_features = idx_collection[self.rank*bs: (self.rank+1)*bs]
