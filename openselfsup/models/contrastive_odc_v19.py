@@ -165,7 +165,18 @@ class ContrastiveODC_V19(nn.Module):
             for cluster_idx in close_cluster_idx_list:
                 neg_feature_idx = (self.memory_bank.label_bank == cluster_idx).nonzero(as_tuple=False).flatten().tolist()
                 neg_feature_idx.extend(neg_feature_idx)
-            neg_feature_idx = random.sample(neg_feature_idx, self.num_neg_features)
+
+            try:
+                neg_feature_idx = random.sample(neg_feature_idx, self.num_neg_features)
+            except Exception as e:
+                print(e)
+                print('trying to sample {} from {}'.format(self.num_neg_features, len(neg_feature_idx)))
+                print('close cluster is: {}'.format(close_cluster_idx_list))
+
+                for cluster_idx in close_cluster_idx_list:
+                    neg_feature_idx = (self.memory_bank.label_bank == cluster_idx).nonzero(as_tuple=False).flatten().tolist()
+                    print('cluster {} has {} features'.format(cluster_idx, len(neg_feature_idx)))
+
             neg_idx_list.append(neg_feature_idx)
         
         return pos_idx_list, neg_idx_list
