@@ -8,5 +8,7 @@ from .contrastive_odc_head_v17 import ContrastiveODCHead_V17
 from .contrastive_odc_head_v18 import ContrastiveODCHead_V18
 from .contrastive_odc_head_v19 import ContrastiveODCHead_V19
 from .contrastive_odc_head_v20 import ContrastiveODCHead_V20
+from .contrastive_odc_head_v21 import ContrastiveODCHead_V21
+from .contrastive_odc_head_v22 import ContrastiveODCHead_V22
 from .latent_pred_head import LatentPredictHead
 from .multi_cls_head import MultiClsHead
