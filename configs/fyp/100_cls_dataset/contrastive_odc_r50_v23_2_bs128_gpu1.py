@@ -1,3 +1,7 @@
+"""
+replace sum of exp with mean of sim
+"""
+
 _base_ = '../../base.py'
 # model settings
 # num_classes = 1000
@@ -6,7 +10,7 @@ _base_ = '../../base.py'
 # set to 200? ODC has classes = 10000 while imagenet only has 1000 classes
 # num_classes = 20
 num_classes = 100
-train_bs = 64
+train_bs = 128
 
 model = dict(
     type='ContrastiveODC_V23_2',
@@ -14,7 +18,7 @@ model = dict(
     with_sobel=False,
     num_neg_centroids=16,
     num_neg_features=128,
-    num_pos_features=16,
+    num_pos_features=32,
     backbone=dict(
         type='ResNet',
         depth=50,

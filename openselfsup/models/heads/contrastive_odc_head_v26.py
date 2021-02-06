@@ -130,12 +130,14 @@ class ContrastiveODCHead_V26(nn.Module):
         cls_cts_loss = self.calc_cls_cts_loss(cluster_positive, cluster_negative)
         cls_score_mse_loss = self.calc_classification_score_loss(outs_to_odc, outs_to_cts)
         cls_loss, acc = self.calc_classification_loss(cls_scores, cls_labels)
+        
         losses = dict()
         losses['ins_cts_loss'] = ins_cts_loss
         losses['cls_cts_loss'] = cls_cts_loss
         losses['cls_loss'] = cls_loss
         losses['acc'] = acc
         losses['cls_score_mse_loss'] = cls_score_mse_loss
+        # losses['loss'] = 0.3 * ins_cts_loss  + 0.3 * cls_score_mse_loss + 0.3 * cls_loss  + 0.1 * cls_cts_loss
         losses['loss'] = ins_cts_loss + cls_cts_loss + cls_score_mse_loss + cls_loss
         
         return losses

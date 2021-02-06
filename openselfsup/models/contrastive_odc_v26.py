@@ -123,7 +123,8 @@ class ContrastiveODC_V26(nn.Module):
 
         # preprare feature collections for broadcast
         pos_feature_collection = torch.zeros(
-            size=(labels.size(0) * self.world_size, self.memory_bank.feat_dim)
+            size=(labels.size(0) * self.world_size * self.num_pos_features, 
+            self.memory_bank.feat_dim)
         ).cuda()
         neg_feature_collection = torch.zeros(
             size=(labels.size(0) * self.world_size * self.num_neg_features, 
@@ -139,8 +140,9 @@ class ContrastiveODC_V26(nn.Module):
 
         # get the features of the current rank
         bs = labels.size(0)
-        pos_feature = pos_feature_collection[self.rank*bs:(self.rank+1)*bs]
+        pos_feature = pos_feature_collection[self.rank*bs*self.num_pos_features:(self.rank+1)*bs*self.num_pos_features]
         neg_feature = neg_feature_collection[self.rank*bs*self.num_neg_features:(self.rank+1)*bs*self.num_neg_features]
+        pos_feature = pos_feature.view(bs, self.num_pos_features, -1)
         neg_feature = neg_feature.view(bs, self.num_neg_features, -1)
         return pos_feature, neg_feature
 
@@ -158,7 +160,7 @@ class ContrastiveODC_V26(nn.Module):
             # sample pos feature idx
             pos_feature_idx = (self.memory_bank.label_bank == label).nonzero(as_tuple=False).flatten().tolist()
             pos_feature_idx = random.sample(pos_feature_idx, self.num_pos_features)
-            pos_idx_list.extend(pos_feature_idx)
+            pos_idx_list.append(pos_feature_idx)
 
             # sample neg feature idx
             close_cluster_idx_list = close_clsuter[label]
@@ -240,21 +242,6 @@ class ContrastiveODC_V26(nn.Module):
                           for pair in feature_pairs]
         feature_to_odc = torch.stack(feature_to_odc, dim=0)
 
-        # classification loss
-        feature_norm = feature[0] / (feature[0].norm(dim=1).view(-1, 1) + 1e-10
-                                  )
-        feature_norm_pairs = torch.split(
-            feature_norm, split_size_or_sections=2, dim=0)
-
-        outs_norm_odd = [pair[0]
-                          for pair in feature_norm_pairs]
-        outs_norm_even = [pair[1]
-                          for pair in feature_norm_pairs]
-        outs_norm_odd = torch.stack(outs_norm_odd, dim=0)
-        outs_norm_even = torch.stack(outs_norm_even, dim=0)
-        outs_norm_odd_cls_score = torch.matmul(outs_norm_odd, self.memory_bank.centroids.permute(1, 0))
-        outs_norm_even_cls_score = torch.matmul(outs_norm_even, self.memory_bank.centroids.permute(1, 0))
-
         # get items for loss
         if self.memory_bank.label_bank.is_cuda:
             cls_labels = self.memory_bank.label_bank[idx]
@@ -265,17 +252,28 @@ class ContrastiveODC_V26(nn.Module):
         change_ratio = self.memory_bank.update_samples_memory(
             idx, feature_to_odc.detach())
 
+        # classification loss
+        feature_norm = feature[0] / (feature[0].norm(dim=1).view(-1, 1) + 1e-10)
+        feature_norm_pairs = torch.split(
+            feature_norm, split_size_or_sections=2, dim=0)
+        outs_norm_odd = [pair[0]
+                          for pair in feature_norm_pairs]
+        outs_norm_even = [pair[1]
+                          for pair in feature_norm_pairs]
+        outs_norm_odd = torch.stack(outs_norm_odd, dim=0)
+        outs_norm_even = torch.stack(outs_norm_even, dim=0)
+        outs_norm_odd_cls_score = torch.matmul(outs_norm_odd, self.memory_bank.centroids.permute(1, 0))
+        outs_norm_even_cls_score = torch.matmul(outs_norm_even, self.memory_bank.centroids.permute(1, 0))
 
-        # for cluster level contrastive loss
-        # cluster level contrastive loss
+        # # for cluster level contrastive loss
+        # # cluster level contrastive loss
         feat_after_update = self.get_updated_features(idx)
         pos_features, neg_features = self.get_features(cls_labels)
-
-        # calculate simlilarity for contrastive loss
-        cls_pos = torch.mul(feat_after_update, pos_features).sum(dim=1).unsqueeze(1)
+        
+        # # calculate simlilarity for contrastive loss
+        cls_pos = torch.mul(feat_after_update.unsqueeze(1), pos_features).sum(dim=2).mean(dim=1).unsqueeze(1)
         cls_neg = torch.mul(feat_after_update.unsqueeze(1), neg_features).sum(dim=2)
         
-
         # loss input
         loss_inputs = dict()
         loss_inputs['instance_positive'] = positive
@@ -286,13 +284,9 @@ class ContrastiveODC_V26(nn.Module):
         loss_inputs['outs_to_cts'] = outs_norm_even_cls_score
         loss_inputs['cls_scores'] = [outs_norm_odd_cls_score]
         loss_inputs['cls_labels'] = cls_labels
-        # loss_inputs['centroids'] = centroids
 
         # loss calculation
         losses = self.head.loss(**loss_inputs)
-        # print(losses)
-
-        
         losses['change_ratio'] = change_ratio
 
         return losses
