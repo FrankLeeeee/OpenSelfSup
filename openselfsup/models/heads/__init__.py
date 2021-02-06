@@ -7,5 +7,6 @@ from .contrastive_odc_head_v22 import ContrastiveODCHead_V22
 from .contrastive_odc_head_v23 import ContrastiveODCHead_V23
 from .contrastive_odc_head_v24 import ContrastiveODCHead_V24
 from .contrastive_odc_head_v25 import ContrastiveODCHead_V25
+from .contrastive_odc_head_v26 import ContrastiveODCHead_V26
 from .latent_pred_head import LatentPredictHead
 from .multi_cls_head import MultiClsHead
