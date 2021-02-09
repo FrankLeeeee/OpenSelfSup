@@ -10,7 +10,7 @@ _base_ = '../../base.py'
 # set to 200? ODC has classes = 10000 while imagenet only has 1000 classes
 # num_classes = 20
 num_classes = 100
-train_bs = 128
+train_bs = 64
 
 model = dict(
     type='ContrastiveODC_V23_2',
@@ -46,7 +46,7 @@ model = dict(
         feat_dim=256,
         momentum=0.5,
         num_classes=num_classes,
-        min_cluster=32,
+        min_cluster=100,
         debug=False))
 # dataset settings
 data_source_cfg = dict(
