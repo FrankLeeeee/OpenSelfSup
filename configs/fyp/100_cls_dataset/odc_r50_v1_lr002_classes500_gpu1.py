@@ -63,7 +63,7 @@ extract_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
 ]
 data = dict(
-    imgs_per_gpu=64,  # 64*8
+    imgs_per_gpu=128,  # 64*8
     sampling_replace=True,
     workers_per_gpu=2,
     train=dict(
