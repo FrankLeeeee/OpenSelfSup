@@ -4,12 +4,12 @@ _base_ = '../../base.py'
 
 # NOTE
 # set to 200? ODC has classes = 10000 while imagenet only has 1000 classes
-num_classes = 100
+num_classes = 250
 # num_classes = 20
 train_bs = 64
 
 model = dict(
-    type='ContrastiveODC_V27',
+    type='ContrastiveODC_V28',
     pretrained=None,
     with_sobel=False,
     backbone=dict(
@@ -26,7 +26,7 @@ model = dict(
         out_channels=256,
         with_avg_pool=True),
     head=dict(
-        type='ContrastiveODCHead_V27',
+        type='ContrastiveODCHead_V28',
         alpha=0.2,
         beta=1,
         with_avg_pool=False,
@@ -39,8 +39,9 @@ model = dict(
         feat_dim=256,
         momentum=0.5,
         num_classes=num_classes,
-        min_cluster=32,
+        min_cluster=0,
         debug=False))
+
 # dataset settings
 data_source_cfg = dict(
     type='ImageNet',
@@ -49,7 +50,7 @@ data_source_cfg = dict(
 data_train_list = 'data/imagenet/meta/subdataset/train_labeled_50percent_10interval_no_label.txt'
 # data_train_list = 'data/imagenet/meta/subdataset/train_labeled_20percent_50interval_no_label.txt'
 data_train_root = 'data/imagenet/train'
-dataset_type = 'ContrastiveODCDataset'
+dataset_type = 'DeepClusterDataset'
 img_norm_cfg = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
 train_pipeline = [
@@ -108,7 +109,6 @@ custom_hooks = [
             workers_per_gpu=4,
             dataset=dict(
                 type=dataset_type,
-                for_extractor=True,
                 data_source=dict(
                     list_file=data_train_list,
                     root=data_train_root,
@@ -116,7 +116,7 @@ custom_hooks = [
                 pipeline=extract_pipeline)),
         clustering=dict(type='Kmeans', k=num_classes, pca_dim=-1),  # no pca
         unif_sampling=False,
-        reweight=True,
+        reweight=False,
         reweight_pow=0.5,
         init_memory=True,
         initial=True,  # call initially

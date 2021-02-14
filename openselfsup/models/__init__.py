@@ -4,6 +4,7 @@ from .byol import BYOL
 from .classification import Classification
 from .contrastive_odc import ContrastiveODC
 from .contrastive_odc_v27 import ContrastiveODC_V27
+from .contrastive_odc_v28 import ContrastiveODC_V28
 from .deepcluster import DeepCluster
 from .heads import *
 from .memories import *
