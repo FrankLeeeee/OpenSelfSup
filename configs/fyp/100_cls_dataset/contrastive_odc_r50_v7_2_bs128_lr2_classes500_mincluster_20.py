@@ -17,7 +17,7 @@ model = dict(
         in_channels=3,
         out_indices=[4],  # 0: conv-1, x: stage-x
         norm_cfg=dict(type='SyncBN'),
-        with_cp=True),
+        with_cp=False),
     neck=dict(
         type='NonLinearNeckSimCLR',
         in_channels=2048,
