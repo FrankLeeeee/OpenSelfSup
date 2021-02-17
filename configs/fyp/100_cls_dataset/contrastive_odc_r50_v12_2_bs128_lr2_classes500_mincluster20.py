@@ -4,11 +4,11 @@ _base_ = '../../base.py'
 
 # NOTE
 # set to 200? ODC has classes = 10000 while imagenet only has 1000 classes
-num_classes = 100
+num_classes = 500
 train_bs = 64
 
 model = dict(
-    type='ContrastiveODC_V12',
+    type='ContrastiveODC_V12_2',
     pretrained=None,
     with_sobel=False,
     backbone=dict(
@@ -17,7 +17,7 @@ model = dict(
         in_channels=3,
         out_indices=[4],  # 0: conv-1, x: stage-x
         norm_cfg=dict(type='SyncBN'),
-        with_cp=True),
+        with_cp=False),
     neck=dict(
         type='NonLinearNeckSimCLR',
         in_channels=2048,
@@ -38,7 +38,7 @@ model = dict(
         feat_dim=256,
         momentum=0.5,
         num_classes=num_classes,
-        min_cluster=32,
+        min_cluster=20,
         debug=False))
 # dataset settings
 data_source_cfg = dict(
@@ -129,10 +129,16 @@ custom_hooks = [
 ]
 
 # optimizer
-optimizer = dict(type='LARS', lr=0.2, weight_decay=0.000001, momentum=0.9,
-                 paramwise_options={
-                     '(bn|gn)(\d+)?.(weight|bias)': dict(weight_decay=0., lars_exclude=True),
-                     'bias': dict(weight_decay=0., lars_exclude=True)})
+optimizer = dict(
+    type='LARS',
+    lr=0.2,
+    weight_decay=0.000001,
+    momentum=0.9,
+    paramwise_options={
+        '(bn|gn)(\d+)?.(weight|bias)':
+        dict(weight_decay=0., lars_exclude=True),
+        'bias': dict(weight_decay=0., lars_exclude=True)
+    })
 
 # optimizer = dict(
 #     type='SGD', lr=0.005, momentum=0.9, weight_decay=0.00001,
@@ -147,14 +153,12 @@ lr_config = dict(
     warmup_iters=10,
     warmup_ratio=0.0001,
     warmup_by_epoch=True)
-checkpoint_config = dict(interval=10)
+checkpoint_config = dict(interval=20)
 
 # runtime settings
 total_epochs = 200
 
 log_config = dict(
     interval=10,
-    hooks=[
-        dict(type='TextLoggerHook'),
-        dict(type='TensorboardLoggerHook')
-    ])
+    hooks=[dict(type='TextLoggerHook'),
+           dict(type='TensorboardLoggerHook')])

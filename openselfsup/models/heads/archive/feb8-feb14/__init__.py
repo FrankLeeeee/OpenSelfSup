@@ -1,1 +1,2 @@
+from .contrastive_odc_head_v27 import ContrastiveODCHead_V27
 from .contrastive_odc_head_v28 import ContrastiveODCHead_V28

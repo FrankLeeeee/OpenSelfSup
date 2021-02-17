@@ -4,7 +4,7 @@ _base_ = '../../base.py'
 
 # NOTE
 # set to 200? ODC has classes = 10000 while imagenet only has 1000 classes
-num_classes = 250
+num_classes = 400
 train_bs = 64
 
 model = dict(
@@ -38,7 +38,7 @@ model = dict(
         feat_dim=256,
         momentum=0.5,
         num_classes=num_classes,
-        min_cluster=50,
+        min_cluster=32,
         debug=False))
 # dataset settings
 data_source_cfg = dict(

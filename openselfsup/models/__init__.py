@@ -5,7 +5,6 @@ from .classification import Classification
 from .contrastive_odc import ContrastiveODC
 from .contrastive_odc_v7_2 import ContrastiveODC_V7_2
 from .contrastive_odc_v12_2 import ContrastiveODC_V12_2
-from .contrastive_odc_v27 import ContrastiveODC_V27
 from .deepcluster import DeepCluster
 from .heads import *
 from .memories import *

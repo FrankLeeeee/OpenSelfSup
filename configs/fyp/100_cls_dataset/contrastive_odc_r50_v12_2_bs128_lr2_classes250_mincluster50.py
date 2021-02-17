@@ -8,7 +8,7 @@ num_classes = 250
 train_bs = 64
 
 model = dict(
-    type='ContrastiveODC_V7_2',
+    type='ContrastiveODC_V12_2',
     pretrained=None,
     with_sobel=False,
     backbone=dict(
@@ -25,7 +25,7 @@ model = dict(
         out_channels=256,
         with_avg_pool=True),
     head=dict(
-        type='ContrastiveODCHead_V7',
+        type='ContrastiveODCHead_V12',
         alpha=0.2,
         beta=1,
         with_avg_pool=False,
@@ -86,9 +86,8 @@ extract_pipeline = [
     dict(type='ToTensor'),
     dict(type='Normalize', **img_norm_cfg),
 ]
-
 data = dict(
-    imgs_per_gpu=train_bs,  # 64*2
+    imgs_per_gpu=train_bs,  # 64*8
     sampling_replace=True,
     workers_per_gpu=4,
     train=dict(
@@ -128,6 +127,7 @@ custom_hooks = [
         reweight=True,
         reweight_pow=0.5)
 ]
+
 # optimizer
 optimizer = dict(
     type='LARS',
