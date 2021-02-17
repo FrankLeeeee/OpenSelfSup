@@ -3,8 +3,9 @@ from .builder import build_backbone, build_head, build_loss, build_model
 from .byol import BYOL
 from .classification import Classification
 from .contrastive_odc import ContrastiveODC
+from .contrastive_odc_v7_2 import ContrastiveODC_V7_2
+from .contrastive_odc_v12_2 import ContrastiveODC_V12_2
 from .contrastive_odc_v27 import ContrastiveODC_V27
-from .contrastive_odc_v28 import ContrastiveODC_V28
 from .deepcluster import DeepCluster
 from .heads import *
 from .memories import *
