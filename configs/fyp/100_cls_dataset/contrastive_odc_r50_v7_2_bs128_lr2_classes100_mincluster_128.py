@@ -5,7 +5,7 @@ _base_ = '../../base.py'
 # NOTE
 # set to 200? ODC has classes = 10000 while imagenet only has 1000 classes
 num_classes = 100
-train_bs = 64
+train_bs = 128
 
 model = dict(
     type='ContrastiveODC_V7_2',
