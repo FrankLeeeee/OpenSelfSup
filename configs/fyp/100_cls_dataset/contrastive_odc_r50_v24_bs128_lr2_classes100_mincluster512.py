@@ -39,8 +39,9 @@ model = dict(
         feat_dim=256,
         momentum=0.5,
         num_classes=num_classes,
-        min_cluster=32,
+        min_cluster=512,
         debug=False))
+
 # dataset settings
 data_source_cfg = dict(
     type='ImageNet',
