@@ -143,7 +143,7 @@ class ContrastiveODC_V24_ABL_STUDY_3(nn.Module):
         feature_to_cts = torch.stack(feature_to_cts, dim=0)
 
         # projection head
-        outs_to_odc = self.head([feature])  # (2n) * k
+        outs_to_odc = self.head([feature_to_odc])  # (2n) * k
         outs_to_cts = self.head([feature_to_cts])  # (2n) * k
 
         # classification loss

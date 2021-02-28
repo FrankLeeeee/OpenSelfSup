@@ -42,6 +42,7 @@ class ContrastiveODCHead_V24_ABL_STUDY_3(nn.Module):
 
         if self.with_avg_pool:
             self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc_cls = nn.Linear(in_channels, num_classes)
 
     def init_weights(self, init_linear='normal', std=0.01, bias=0.):
         assert init_linear in ['normal', 'kaiming'], \
