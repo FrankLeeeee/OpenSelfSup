@@ -102,8 +102,6 @@ class ContrastiveODCHead_V24_ABL_STUDY_2(nn.Module):
         negative,
         outs_to_odc,
         outs_to_cts,
-        cls_scores,
-        cls_labels,
     ):
         """Forward head.
 
