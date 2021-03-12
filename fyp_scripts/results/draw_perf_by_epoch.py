@@ -14,7 +14,8 @@ X = list(range(40, 201, 40))
 def main():
     plt.plot(X, SIMCLR_Y_TOP1, label="SimCLR")
     plt.plot(X, ODC_Y_TOP1, label="ODC")
-    plt.plot(X, CONODC_V24_Y_TOP1, label="Contrastive ODC V24")
+    plt.plot(
+        X, CONODC_V24_Y_TOP1, label="Contrastive ODC V3")  # For V24 in exp log
 
     plt.xlabel('epoch')
     plt.ylabel('accurary')
@@ -28,7 +29,8 @@ def main():
 
     plt.plot(X, SIMCLR_Y_TOP5, label="SimCLR")
     plt.plot(X, ODC_Y_TOP5, label="ODC")
-    plt.plot(X, CONODC_V24_Y_TOP5, label="Contrastive ODC V24")
+    plt.plot(
+        X, CONODC_V24_Y_TOP5, label="Contrastive ODC V3")  # For V24 in exp log
 
     plt.xlabel('epoch')
     plt.ylabel('accurary')
