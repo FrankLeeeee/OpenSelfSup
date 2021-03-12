@@ -4,7 +4,7 @@ model = dict(
     type='MOCO',
     pretrained=None,
     # queue_len=65536,  # 65536 / 1281167 ~= 0.05
-    queue_len=3196,  # 63916 * 0.05 = 3196
+    queue_len=3200,  # 3200 % 128 = 0
     feat_dim=128,
     momentum=0.999,
     backbone=dict(
