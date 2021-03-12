@@ -105,7 +105,7 @@ class ContrastiveODC_V24_ABL_STUDY_5(nn.Module):
         return mask, pos_ind, neg_mask
 
     def get_random_feature_from_each_cluster(self):
-        feature_collect = torch.rand(self.memory_bank.length,
+        feature_collect = torch.rand(self.memory_bank.num_classes,
                                      self.memory_bank.feat_dim).cuda()
 
         if self.rank == 0:
