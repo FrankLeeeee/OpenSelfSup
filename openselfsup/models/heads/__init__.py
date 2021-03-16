@@ -1,3 +1,4 @@
+from .attention_head import AttentionHead
 from .cls_head import ClsHead
 from .contrastive_head import ContrastiveHead
 from .contrastive_odc_head import ContrastiveODCHead

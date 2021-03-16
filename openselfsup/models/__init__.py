@@ -1,3 +1,4 @@
+from .attention_contrast import AttentionContrast
 from .backbones import *  # noqa: F401,F403
 from .builder import build_backbone, build_head, build_loss, build_model
 from .byol import BYOL
