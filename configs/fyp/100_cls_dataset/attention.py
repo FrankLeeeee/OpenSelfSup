@@ -25,8 +25,8 @@ data_source_cfg = dict(
     type='ImageNet',
     memcached=True,
     mclient_path='/mnt/lustre/share/memcached_client')
-# data_train_list = 'data/imagenet/meta/subdataset/train_labeled_50percent_10interval_no_label.txt'
-data_train_list = 'data/imagenet/meta/subdataset/train_labeled_20percent_50interval_no_label.txt'
+data_train_list = 'data/imagenet/meta/subdataset/train_labeled_50percent_10interval_no_label.txt'
+# data_train_list = 'data/imagenet/meta/subdataset/train_labeled_20percent_50interval_no_label.txt'
 data_train_root = 'data/imagenet/train'
 dataset_type = 'DeepClusterDataset'
 img_norm_cfg = dict(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
